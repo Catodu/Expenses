@@ -67,3 +67,9 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Raison** : demande utilisateur ("pas en dur, comme une var d'env"). Une vraie var d'env n'existe pas pour une page statique (le navigateur doit recevoir le secret d'une façon ou d'une autre) ; le `localStorage` est l'équivalent le plus proche : le secret ne vit que sur les appareils autorisés. Permet un repo **public** (GitHub Pages gratuit) sans exposer le token.
 **Conséquence** : l'ancien token, présent dans l'historique git (commit 9668518), a été **révoqué** (rotation côté ScriptProperties) avant le passage en public.
 **Écarté** : injection au build via GitHub Actions + secret (sort le token du repo mais pas du source de la page déployée) ; HtmlService (perd le service worker donc le hors-ligne, et l'installation standalone — cf. critères de done).
+
+## D15 — Récap du jour : calculé par le backend (`GET ?action=today`)
+**Choix** : le backend renvoie total + liste des dépenses du jour (date Europe/Brussels) ; l'app l'affiche sous le champ et le rafraîchit au chargement, au retour au premier plan, après chaque saisie confirmée et après chaque resynchronisation. La liste du jour remplace l'historique de session, qui ne montre plus que les saisies **non confirmées** (en attente/hors-ligne/erreur) — sinon chaque dépense apparaissait deux fois.
+**Raison** : le Sheet est la source de vérité — un récap calculé côté client (session ou localStorage) raterait les saisies faites depuis un autre appareil ou une session précédente.
+**Limite assumée** : lecture de tout l'onglet `log` à chaque appel — négligeable à échelle perso (des années ≈ quelques milliers de lignes) ; optimisable plus tard en lisant depuis le bas.
+**Rappel opérationnel** : toute évolution des assets de la PWA exige d'incrémenter le nom du cache dans `sw.js` (`expenses-vN`), sinon les téléphones gardent l'ancienne version en cache-first (cf. [D11]).

@@ -58,11 +58,14 @@ function doPost(e) {
   }
 }
 
-/** GET de vérification optionnel : .../exec?token=XXX */
+/** GET : .../exec?token=XXX (statut) ou &action=today (récap du jour) */
 function doGet(e) {
   var token = e && e.parameter ? e.parameter.token : null;
   if (!isAuthorized(token)) {
     return jsonOut({ ok: false, error: 'unauthorized' });
+  }
+  if (e.parameter.action === 'today') {
+    return jsonOut(todayRecap());
   }
   var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
   var lastRow = sheet.getLastRow();
@@ -74,6 +77,40 @@ function doGet(e) {
     last = { date: d, montant: v[2], libelle: v[3], categorie: v[4] };
   }
   return jsonOut({ ok: true, rows: Math.max(0, lastRow - 1), last: last });
+}
+
+/** Dépenses du jour (date = aujourd'hui Europe/Brussels) : total + liste. */
+function todayRecap() {
+  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
+  var today = todayStr();
+  var items = [];
+  var total = 0;
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    // B..E : date | montant | libelle | categorie
+    var vals = sheet.getRange(2, 2, lastRow - 1, 4).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var d =
+        vals[i][0] instanceof Date
+          ? Utilities.formatDate(vals[i][0], TZ, 'yyyy-MM-dd')
+          : String(vals[i][0]);
+      if (d === today) {
+        items.push({
+          montant: vals[i][1],
+          libelle: String(vals[i][2]),
+          categorie: String(vals[i][3])
+        });
+        total += Number(vals[i][1]) || 0;
+      }
+    }
+  }
+  return {
+    ok: true,
+    date: today,
+    total: Math.round(total * 100) / 100,
+    count: items.length,
+    items: items
+  };
 }
 
 function isAuthorized(token) {

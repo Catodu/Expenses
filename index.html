@@ -83,7 +83,13 @@
     color: var(--warn);
     min-height: 18px;
   }
-  #history { margin-top: 20px; list-style: none; }
+  #recapTotal {
+    margin-top: 22px;
+    font-size: 15px;
+    color: var(--muted);
+  }
+  #recapTotal strong { color: var(--text); font-size: 18px; }
+  #history { margin-top: 8px; list-style: none; }
   #history li {
     display: flex;
     justify-content: space-between;
@@ -119,6 +125,7 @@
   </form>
   <div id="toast" role="status"></div>
   <div id="pending"></div>
+  <div id="recapTotal"></div>
   <ul id="history"></ul>
 </main>
 
@@ -145,8 +152,10 @@ const form = document.getElementById('f');
 const toastEl = document.getElementById('toast');
 const pendingEl = document.getElementById('pending');
 const historyEl = document.getElementById('history');
+const recapTotalEl = document.getElementById('recapTotal');
 
-const history = []; // session uniquement, 5 dernières affichées
+const history = []; // saisies de la session (les non-confirmées restent affichées)
+let dayRecap = null; // dernier récap du jour renvoyé par le backend
 let toastTimer = null;
 let flushing = false;
 
@@ -175,9 +184,11 @@ function setQueue(q) {
   pendingEl.textContent = q.length ? `⏳ ${q.length} en attente de synchronisation` : '';
 }
 
+/* Liste affichée : saisies de session non confirmées (pending/queued/error)
+   en tête, puis les dépenses du jour renvoyées par le backend. */
 function renderHistory() {
   historyEl.innerHTML = '';
-  for (const h of history.slice(-5).reverse()) {
+  for (const h of history.filter((h) => h.status !== 'ok').slice(-5).reverse()) {
     const li = document.createElement('li');
     li.className = h.status;
     const label = document.createElement('span');
@@ -189,6 +200,36 @@ function renderHistory() {
     li.append(label, status);
     historyEl.appendChild(li);
   }
+  if (dayRecap) {
+    recapTotalEl.innerHTML = '';
+    const s = document.createElement('strong');
+    s.textContent = eur.format(dayRecap.total);
+    recapTotalEl.append('Aujourd’hui : ', s,
+      ` · ${dayRecap.count} dépense${dayRecap.count > 1 ? 's' : ''}`);
+    for (const it of dayRecap.items.slice().reverse()) {
+      const li = document.createElement('li');
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = `${it.libelle} · ${it.categorie}`;
+      const status = document.createElement('span');
+      status.className = 'status';
+      status.textContent = eur.format(it.montant);
+      li.append(label, status);
+      historyEl.appendChild(li);
+    }
+  }
+}
+
+async function fetchRecap() {
+  if (!TOKEN || !navigator.onLine) return;
+  try {
+    const res = await fetch(`${API_URL}?token=${encodeURIComponent(TOKEN)}&action=today`);
+    const data = await res.json();
+    if (data.ok) {
+      dayRecap = data;
+      renderHistory();
+    }
+  } catch { /* hors-ligne ou backend indisponible : on garde l'affichage courant */ }
 }
 
 // POST "simple request" (pas de header custom → pas de preflight CORS,
@@ -217,6 +258,7 @@ async function submitEntry(text) {
       entry.status = 'ok';
       entry.info = `✓ ${eur.format(data.amount)} → ${data.category}`;
       toast(`✓ ${eur.format(data.amount)} → ${data.category}`, 'ok');
+      fetchRecap();
     } else if (data.error === 'unauthorized') {
       entry.status = 'error';
       entry.info = '✗ token';
@@ -250,6 +292,7 @@ async function flushQueue() {
   const q = getQueue();
   if (!q.length) return;
   flushing = true;
+  let synced = 0;
   try {
     while (q.length) {
       const data = await apiSend(q[0]); // rejette si réseau KO → on garde l'item
@@ -257,13 +300,17 @@ async function flushQueue() {
         // ok, ou erreur de parsing définitive : on retire de la file
         q.shift();
         setQueue(q);
-        if (data.ok) toast(`✓ Synchronisé : ${eur.format(data.amount)} → ${data.category}`, 'ok');
+        if (data.ok) {
+          synced++;
+          toast(`✓ Synchronisé : ${eur.format(data.amount)} → ${data.category}`, 'ok');
+        }
       } else {
         break; // unauthorized : inutile d'insister
       }
     }
   } catch { /* réseau : on réessaiera plus tard */ }
   flushing = false;
+  if (synced > 0) fetchRecap();
 }
 
 const cfg = document.getElementById('cfg');
@@ -287,6 +334,8 @@ cfg.addEventListener('submit', (e) => {
   form.hidden = false;
   toast('✓ Token enregistré.', 'ok');
   txt.focus();
+  flushQueue();
+  fetchRecap();
 });
 
 form.addEventListener('submit', (e) => {
@@ -300,7 +349,7 @@ form.addEventListener('submit', (e) => {
 
 window.addEventListener('online', flushQueue);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { txt.focus(); flushQueue(); }
+  if (!document.hidden) { txt.focus(); flushQueue(); fetchRecap(); }
 });
 
 setQueue(getQueue()); // affiche le compteur au chargement
@@ -308,6 +357,7 @@ if (!TOKEN) {
   showConfig('Première utilisation : colle le token (voir SETUP.md).');
 } else {
   flushQueue();
+  fetchRecap();
   txt.focus();
 }
 
