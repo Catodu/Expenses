@@ -80,6 +80,10 @@ function doGet(e) {
   if (e.parameter.action === 'today') {
     return jsonOut(todayRecap());
   }
+  if (e.parameter.action === 'rebuild_dashboard') {
+    buildDashboard(SpreadsheetApp.getActive());
+    return jsonOut({ ok: true, rebuilt: true });
+  }
   var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
   var lastRow = sheet.getLastRow();
   var last = null;
@@ -101,6 +105,7 @@ function todayRecap() {
   var items = [];
   var total = 0;
   var monthTotal = 0;
+  var catTotals = {};
   var lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     // B..E : date | montant | libelle | categorie
@@ -113,6 +118,8 @@ function todayRecap() {
       var amount = Number(vals[i][1]) || 0;
       if (d.slice(0, 7) === monthPrefix) {
         monthTotal += amount;
+        var cat = String(vals[i][3]) || 'autre';
+        catTotals[cat] = (catTotals[cat] || 0) + amount;
       }
       if (d === today) {
         items.push({
@@ -124,12 +131,20 @@ function todayRecap() {
       }
     }
   }
+  var byCategory = Object.keys(catTotals)
+    .map(function (c) {
+      return { categorie: c, total: Math.round(catTotals[c] * 100) / 100 };
+    })
+    .sort(function (a, b) {
+      return b.total - a.total;
+    });
   return {
     ok: true,
     date: today,
     total: Math.round(total * 100) / 100,
     count: items.length,
     month_total: Math.round(monthTotal * 100) / 100,
+    by_category: byCategory,
     items: items
   };
 }
@@ -494,26 +509,144 @@ function buildDashboard(ss) {
   }
   dash.getRange('H7:H18').setNumberFormat('#,##0.00 "€"');
 
-  // Graphs
-  var pie = dash
-    .newChart()
-    .asPieChart()
-    .addRange(dash.getRange('A6:B16'))
-    .setNumHeaders(1)
-    .setOption('title', 'Répartition du mois par catégorie')
-    .setPosition(20, 1, 0, 0)
-    .build();
-  dash.insertChart(pie);
+  // Matrice mois × catégorie : J5.., libellés mois en J, une colonne par catégorie
+  var cats = uniqueCategories(ss);
+  dash.getRange('J5').setValue('Par mois et catégorie');
+  dash.getRange('J5').setFontWeight('bold');
+  dash.getRange('J6').setValue('Mois');
+  var c;
+  for (c = 0; c < cats.length; c++) {
+    dash.getRange(6, 11 + c).setValue(cats[c]);
+  }
+  dash.getRange(6, 10, 1, 1 + cats.length).setFontWeight('bold');
+  for (r = 7; r <= 18; r++) {
+    var off = r - 18; // -11 .. 0
+    dash
+      .getRange(r, 10)
+      .setFormula('=TEXT(EOMONTH(TODAY(),' + (off - 1) + ')+1,"mm/yyyy")');
+    for (c = 0; c < cats.length; c++) {
+      dash
+        .getRange(r, 11 + c)
+        .setFormula(
+          '=SUMIFS(log!$C:$C,log!$B:$B,">="&(EOMONTH(TODAY(),' +
+            (off - 1) +
+            ')+1),log!$B:$B,"<="&EOMONTH(TODAY(),' +
+            off +
+            '),log!$E:$E,' +
+            colLetter(11 + c) +
+            '$6)'
+        );
+    }
+  }
+  dash.getRange(7, 11, 12, cats.length).setNumberFormat('#,##0 "€"');
 
-  var bars = dash
-    .newChart()
-    .asColumnChart()
-    .addRange(dash.getRange('G6:H18'))
-    .setNumHeaders(1)
-    .setOption('title', 'Dépenses par mois (12 derniers mois)')
-    .setPosition(20, 6, 0, 0)
-    .build();
-  dash.insertChart(bars);
+  // Cumul journalier : mois en cours vs mois précédent (lignes 21..52)
+  dash.getRange('A20').setValue('Cumul journalier');
+  dash.getRange('A20').setFontWeight('bold');
+  dash.getRange('A21').setValue('Jour');
+  dash.getRange('B21').setValue('Mois en cours');
+  dash.getRange('C21').setValue('Mois précédent');
+  dash.getRange('A21:C21').setFontWeight('bold');
+  for (r = 22; r <= 52; r++) {
+    var day = r - 21; // 1 .. 31
+    dash.getRange(r, 1).setValue(day);
+    dash
+      .getRange(r, 2)
+      .setFormula(
+        '=IF($A' +
+          r +
+          '>DAY(TODAY()),"",SUMIFS(log!$C:$C,log!$B:$B,">="&(EOMONTH(TODAY(),-1)+1),log!$B:$B,"<="&(EOMONTH(TODAY(),-1)+$A' +
+          r +
+          ')))'
+      );
+    dash
+      .getRange(r, 3)
+      .setFormula(
+        '=IF($A' +
+          r +
+          '>DAY(EOMONTH(TODAY(),-1)),"",SUMIFS(log!$C:$C,log!$B:$B,">="&(EOMONTH(TODAY(),-2)+1),log!$B:$B,"<="&(EOMONTH(TODAY(),-2)+$A' +
+          r +
+          ')))'
+      );
+  }
+  dash.getRange('B22:C52').setNumberFormat('#,##0 "€"');
+
+  // Graphs
+  dash.insertChart(
+    dash
+      .newChart()
+      .asPieChart()
+      .addRange(dash.getRange('A6:B16'))
+      .setNumHeaders(1)
+      .setOption('title', 'Répartition du mois par catégorie')
+      .setPosition(20, 4, 0, 0)
+      .build()
+  );
+
+  dash.insertChart(
+    dash
+      .newChart()
+      .asColumnChart()
+      .addRange(dash.getRange('G6:H18'))
+      .setNumHeaders(1)
+      .setOption('title', 'Dépenses par mois (12 derniers mois)')
+      .setOption('trendlines', { 0: { type: 'linear' } })
+      .setPosition(20, 10, 0, 0)
+      .build()
+  );
+
+  dash.insertChart(
+    dash
+      .newChart()
+      .asColumnChart()
+      .addRange(dash.getRange(6, 10, 13, 1 + cats.length))
+      .setNumHeaders(1)
+      .setOption('isStacked', true)
+      .setOption('title', 'Par mois et catégorie (empilé)')
+      .setPosition(40, 1, 0, 0)
+      .build()
+  );
+
+  dash.insertChart(
+    dash
+      .newChart()
+      .asLineChart()
+      .addRange(dash.getRange('A21:C52'))
+      .setNumHeaders(1)
+      .setOption('title', 'Cumul journalier : mois en cours vs précédent')
+      .setPosition(40, 7, 0, 0)
+      .build()
+  );
+}
+
+/** Catégories distinctes de l'onglet categories (ordre d'apparition) + 'autre'. */
+function uniqueCategories(ss) {
+  var sheet = ss.getSheetByName(SHEET_CAT);
+  var cats = [];
+  var seen = {};
+  if (sheet && sheet.getLastRow() > 1) {
+    var vals = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var cat = String(vals[i][0]).trim();
+      if (cat && !seen[cat]) {
+        seen[cat] = true;
+        cats.push(cat);
+      }
+    }
+  }
+  if (!seen['autre']) cats.push('autre');
+  return cats;
+}
+
+/** 1 → A, 11 → K, 27 → AA. */
+function colLetter(n) {
+  var s = '';
+  while (n > 0) {
+    var m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
 }
 
 /* ------------------------------------------------------------------ */

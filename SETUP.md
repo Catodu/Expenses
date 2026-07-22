@@ -44,11 +44,9 @@ Dans [index.html](index.html), tout en haut du `<script>` :
 const API_URL = 'https://script.google.com/macros/s/XXXXX/exec'; // URL de l'étape 5
 ```
 
-**Le token n'est jamais dans le code** (ni dans le repo, ni dans la page servie). Il est fourni une fois par appareil, au premier lancement :
-- soit en ouvrant la PWA via `https://<ton-url>/#token=abc123...` (le fragment `#` ne quitte pas le navigateur ; il est stocké en `localStorage` puis retiré de la barre d'adresse),
-- soit en le collant dans le champ de configuration que la PWA affiche tant qu'aucun token n'est enregistré.
+**Le token n'est jamais dans le code** (ni dans le repo, ni dans la page servie). Il est fourni une fois par appareil en ouvrant la PWA via le **lien d'installation** `https://<ton-url>/#token=abc123...` : le fragment `#` ne quitte pas le navigateur, il est stocké en `localStorage` puis retiré de la barre d'adresse. Garde ce lien pour toi (gestionnaire de mots de passe, par exemple).
 
-Token invalide ou changé → la PWA raffiche le champ de configuration, les saisies ne sont pas perdues.
+Token manquant ou invalide → la PWA affiche un message demandant de rouvrir le lien d'installation ; les saisies en cours ne sont pas perdues.
 
 ## 7. Héberger sur GitHub Pages
 
@@ -79,5 +77,5 @@ Token invalide ou changé → la PWA raffiche le champ de configuration, les sai
 
 - **Ajouter un mot-clé** : ajoute une ligne dans l'onglet `categories` (keyword | categorie). Effet immédiat, rien à redéployer.
 - **Re-catégoriser d'anciennes lignes** : édite la colonne `categorie` de `log` à la main (la colonne `raw_input` garde la saisie d'origine).
-- **Régénérer le dashboard** (après modification) : ré-exécute `setup()` — il est idempotent, les données de `log` et `categories` ne sont jamais touchées.
-- **Changer le token** : ré-exécute `printNewToken()` dans l'éditeur Apps Script, puis fournis le nouveau token à la PWA (lien `#token=...` ou champ de config — il s'affichera de lui-même dès le premier rejet). Rien à pousser sur GitHub.
+- **Régénérer le dashboard** : `curl "https://.../exec?token=TON_TOKEN&action=rebuild_dashboard"` (ou ré-exécute `setup()` dans l'éditeur). Idempotent, les données de `log` et `categories` ne sont jamais touchées. À faire après avoir ajouté une **nouvelle catégorie** (la matrice mois × catégorie est figée à la construction).
+- **Changer le token** : ré-exécute `printNewToken()` dans l'éditeur Apps Script, puis rouvre la PWA via le nouveau lien `#token=...` sur chaque appareil. Rien à pousser sur GitHub.

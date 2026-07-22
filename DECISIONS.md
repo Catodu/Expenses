@@ -87,3 +87,17 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Choix** : si la saisie n'a pas de montant (`code: 'no_amount'`), le backend cherche la ligne la plus récente dont le **libellé normalisé est identique** au texte saisi, et reprend son montant. Réponse marquée `repeated: true` → toast `✓ 30,00 € → nourriture · montant repris`.
 **Raison** : les dépenses récurrentes à montant fixe (abo, sandwich habituel) tombent à un seul mot tapé.
 **Écarté** : correspondance floue ou par mot-clé (trop de reprises accidentelles — un montant erroné silencieux est pire qu'une erreur explicite) ; date optionnelle avec la répétition (`picard hier` ne matche pas un libellé "picard hier" et renverra l'erreur standard — combinaison jugée rare).
+
+## D19 — Champ de config token supprimé : le lien `#token=...` est la seule voie
+**Choix** : plus de champ "colle le token ici". Sans token (ou token rejeté), la PWA affiche un message renvoyant vers le lien d'installation `#token=...` — mécanisme de [D14] inchangé.
+**Raison** : demande utilisateur ; une seule voie d'entrée = moins de surface UI et moins de risques de manipulation (token tapé à la main, tronqué, collé avec espaces). Le lien réenregistre le token à l'identique sur tout appareil.
+**Conséquence** : le lien d'installation devient le seul "sésame" — à conserver (gestionnaire de mots de passe). Perdu → `printNewToken()` dans l'éditeur et nouveau lien.
+
+## D20 — Mini-graph des catégories du mois dans l'app
+**Choix** : `?action=today` renvoie aussi `by_category` (totaux du mois par catégorie, triés décroissants, calculés dans la même passe que le reste du récap). L'app les rend en barres horizontales CSS pures (largeur relative au max), sous la ligne de récap.
+**Écarté** : lib de charts (contraire au "un seul fichier, pas de framework") ; camembert SVG (illisible en petit, les barres se comparent mieux) ; périmètre "jour" (trop peu de catégories un jour donné pour être parlant — le mois montre le "style de dépense").
+
+## D21 — Dashboard v2 : matrice mois × catégorie, cumul journalier, tendance
+**Choix** : `buildDashboard()` construit en plus (a) une matrice 12 mois × catégories (SUMIFS par cellule, colonnes = catégories distinctes de l'onglet `categories` + `autre`) alimentant un graph **colonnes empilées** ; (b) un tableau cumul journalier jour 1→31 du mois en cours vs précédent alimentant un graph **lignes** (la comparaison "suis-je en avance sur mes dépenses ?" en un coup d'œil) ; (c) une **courbe de tendance** linéaire sur l'évolution 12 mois.
+**Rebuild à distance** : action `?action=rebuild_dashboard` (token requis) — permanente car nécessaire après ajout d'une catégorie (matrice figée à la construction) et sans danger (idempotent, ne touche ni `log` ni `categories`).
+**Limite assumée** : jours 29–31 absents des mois courts → cellules vides, les courbes s'arrêtent proprement.

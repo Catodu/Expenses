@@ -1,6 +1,6 @@
 /* Service worker minimal : rend la PWA installable et l'ouvre instantanément
    même sans réseau (les POST vers Apps Script ne sont jamais interceptés). */
-const CACHE = 'expenses-v3';
+const CACHE = 'expenses-v4';
 const ASSETS = ['./', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
