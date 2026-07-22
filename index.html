@@ -204,8 +204,10 @@ function renderHistory() {
     recapTotalEl.innerHTML = '';
     const s = document.createElement('strong');
     s.textContent = eur.format(dayRecap.total);
+    const m = document.createElement('strong');
+    m.textContent = eur.format(dayRecap.month_total);
     recapTotalEl.append('Aujourd’hui : ', s,
-      ` · ${dayRecap.count} dépense${dayRecap.count > 1 ? 's' : ''}`);
+      ` · ${dayRecap.count} dépense${dayRecap.count > 1 ? 's' : ''} · Mois : `, m);
     for (const it of dayRecap.items.slice().reverse()) {
       const li = document.createElement('li');
       const label = document.createElement('span');
@@ -257,7 +259,8 @@ async function submitEntry(text) {
     if (data.ok) {
       entry.status = 'ok';
       entry.info = `✓ ${eur.format(data.amount)} → ${data.category}`;
-      toast(`✓ ${eur.format(data.amount)} → ${data.category}`, 'ok');
+      const note = data.repeated ? ' · montant repris' : '';
+      toast(`✓ ${eur.format(data.amount)} → ${data.category}${note}`, 'ok');
       fetchRecap();
     } else if (data.error === 'unauthorized') {
       entry.status = 'error';
@@ -344,8 +347,53 @@ form.addEventListener('submit', (e) => {
   if (!text) return;
   txt.value = '';
   txt.focus();
+  if (/^(annule|undo)$/i.test(text)) {
+    undoLast();
+    return;
+  }
   submitEntry(text);
 });
+
+/* "annule" : retire d'abord la dernière saisie encore en file locale
+   (pas encore envoyée), sinon demande au backend de supprimer la
+   dernière ligne du Sheet. */
+async function undoLast() {
+  const q = getQueue();
+  if (q.length) {
+    const it = q.pop();
+    setQueue(q);
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].status === 'queued' && history[i].text === it.text) {
+        history.splice(i, 1);
+        break;
+      }
+    }
+    renderHistory();
+    toast(`↩ Retiré de la file : ${it.text}`, 'warn');
+    return;
+  }
+  if (!navigator.onLine) {
+    toast('✗ Hors-ligne — rien à annuler dans la file.', 'err');
+    return;
+  }
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ token: TOKEN, action: 'undo' })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      toast(`↩ Annulé : ${eur.format(data.undone.montant)} ${data.undone.libelle}`, 'ok');
+      fetchRecap();
+    } else if (data.error === 'unauthorized') {
+      showConfig('✗ Token invalide ou manquant — colle le token :');
+    } else {
+      toast('✗ ' + (data.error || 'Erreur inconnue'), 'err');
+    }
+  } catch {
+    toast('✗ Réseau indisponible — réessaie pour annuler.', 'err');
+  }
+}
 
 window.addEventListener('online', flushQueue);
 document.addEventListener('visibilitychange', () => {

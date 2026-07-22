@@ -37,21 +37,34 @@ function doPost(e) {
       return jsonOut({ ok: false, error: 'unauthorized' });
     }
 
+    if (body.action === 'undo') {
+      return jsonOut(undoLast());
+    }
+
+    var text = String(body.text || '');
     var defaultDate = validIsoDate(body.client_date) || todayStr();
-    var parsed = parseExpense(String(body.text || ''), defaultDate);
+    var parsed = parseExpense(text, defaultDate);
+    if (parsed.error && parsed.code === 'no_amount') {
+      // Répétition : "picard" tout seul reprend le dernier montant de ce libellé.
+      var lastAmount = lastAmountFor(text.trim());
+      if (lastAmount !== null) {
+        parsed = { amount: lastAmount, label: text.trim(), date: defaultDate, repeated: true };
+      }
+    }
     if (parsed.error) {
       return jsonOut({ ok: false, error: parsed.error });
     }
 
     var category = categorize(parsed.label);
-    appendExpense(parsed, category, String(body.text || ''));
+    appendExpense(parsed, category, text);
 
     return jsonOut({
       ok: true,
       amount: parsed.amount,
       label: parsed.label,
       category: category,
-      date: parsed.date
+      date: parsed.date,
+      repeated: Boolean(parsed.repeated)
     });
   } catch (err) {
     return jsonOut({ ok: false, error: 'server_error: ' + err.message });
@@ -79,12 +92,15 @@ function doGet(e) {
   return jsonOut({ ok: true, rows: Math.max(0, lastRow - 1), last: last });
 }
 
-/** Dépenses du jour (date = aujourd'hui Europe/Brussels) : total + liste. */
+/** Dépenses du jour (date = aujourd'hui Europe/Brussels) : total + liste,
+ *  plus le total du mois en cours. */
 function todayRecap() {
   var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
   var today = todayStr();
+  var monthPrefix = today.slice(0, 7); // 'yyyy-MM'
   var items = [];
   var total = 0;
+  var monthTotal = 0;
   var lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     // B..E : date | montant | libelle | categorie
@@ -94,13 +110,17 @@ function todayRecap() {
         vals[i][0] instanceof Date
           ? Utilities.formatDate(vals[i][0], TZ, 'yyyy-MM-dd')
           : String(vals[i][0]);
+      var amount = Number(vals[i][1]) || 0;
+      if (d.slice(0, 7) === monthPrefix) {
+        monthTotal += amount;
+      }
       if (d === today) {
         items.push({
           montant: vals[i][1],
           libelle: String(vals[i][2]),
           categorie: String(vals[i][3])
         });
-        total += Number(vals[i][1]) || 0;
+        total += amount;
       }
     }
   }
@@ -109,8 +129,45 @@ function todayRecap() {
     date: today,
     total: Math.round(total * 100) / 100,
     count: items.length,
+    month_total: Math.round(monthTotal * 100) / 100,
     items: items
   };
+}
+
+/** Supprime la dernière ligne du log (et uniquement elle). */
+function undoLast() {
+  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return { ok: false, error: 'Rien à annuler.' };
+  }
+  var v = sheet.getRange(lastRow, 1, 1, 6).getValues()[0];
+  sheet.deleteRow(lastRow);
+  return {
+    ok: true,
+    undone: {
+      montant: v[2],
+      libelle: String(v[3]),
+      categorie: String(v[4])
+    }
+  };
+}
+
+/** Dernier montant loggé pour ce libellé exact (normalisé), sinon null. */
+function lastAmountFor(label) {
+  var norm = normalizeStr(label);
+  if (!norm) return null;
+  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return null;
+  // C..D : montant | libelle
+  var vals = sheet.getRange(2, 3, lastRow - 1, 2).getValues();
+  for (var i = vals.length - 1; i >= 0; i--) {
+    if (normalizeStr(String(vals[i][1])) === norm) {
+      return Number(vals[i][0]);
+    }
+  }
+  return null;
 }
 
 function isAuthorized(token) {
@@ -137,7 +194,10 @@ function parseExpense(text, defaultDate) {
   // Montant = premier token. Virgule acceptée, "€" toléré en suffixe.
   var amountToken = tokens[0].replace(/€$/, '').replace(',', '.');
   if (!/^\d+(\.\d{1,2})?$/.test(amountToken)) {
-    return { error: 'Montant introuvable — format attendu : "40 picard".' };
+    return {
+      error: 'Montant introuvable — format attendu : "40 picard".',
+      code: 'no_amount'
+    };
   }
   var amount = Math.round(parseFloat(amountToken) * 100) / 100;
   if (amount <= 0) {

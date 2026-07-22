@@ -73,3 +73,17 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Raison** : le Sheet est la source de vérité — un récap calculé côté client (session ou localStorage) raterait les saisies faites depuis un autre appareil ou une session précédente.
 **Limite assumée** : lecture de tout l'onglet `log` à chaque appel — négligeable à échelle perso (des années ≈ quelques milliers de lignes) ; optimisable plus tard en lisant depuis le bas.
 **Rappel opérationnel** : toute évolution des assets de la PWA exige d'incrémenter le nom du cache dans `sw.js` (`expenses-vN`), sinon les téléphones gardent l'ancienne version en cache-first (cf. [D11]).
+
+## D16 — Total du mois dans le récap
+**Choix** : `?action=today` renvoie aussi `month_total` (mois civil en cours, Europe/Brussels), calculé dans la même passe de lecture que le jour. Affiché sur la même ligne que le total du jour.
+**Écarté** : un appel séparé (une lecture du Sheet de plus pour rien) ; le mois glissant sur 30 jours (le dashboard raisonne déjà en mois civil, cohérence).
+
+## D17 — `annule` : suppression de la dernière saisie, en cascade
+**Choix** : taper `annule` (ou `undo`) dans le champ de saisie. Ordre : (1) s'il reste des saisies en file locale non envoyées, la dernière est retirée de la file (elle n'a jamais atteint le Sheet) ; (2) sinon, le backend supprime la **dernière ligne** de `log` et renvoie ce qu'il a supprimé (affiché dans le toast).
+**Raison** : garder le principe "une seule zone de saisie" — pas de bouton, pas d'écran de gestion. Le mot-clé est intercepté côté client, donc impossible de logger une dépense libellée "annule" : cas jugé négligeable.
+**Limite assumée** : "dernière ligne du Sheet" = la plus récente **chronologiquement insérée**, quel que soit l'appareil. Usage mono-utilisateur : le risque de supprimer la ligne d'un "autre" est nul. Pour corriger plus vieux que la dernière ligne → édition directe du Sheet.
+
+## D18 — Répétition : libellé seul = dernier montant connu
+**Choix** : si la saisie n'a pas de montant (`code: 'no_amount'`), le backend cherche la ligne la plus récente dont le **libellé normalisé est identique** au texte saisi, et reprend son montant. Réponse marquée `repeated: true` → toast `✓ 30,00 € → nourriture · montant repris`.
+**Raison** : les dépenses récurrentes à montant fixe (abo, sandwich habituel) tombent à un seul mot tapé.
+**Écarté** : correspondance floue ou par mot-clé (trop de reprises accidentelles — un montant erroné silencieux est pire qu'une erreur explicite) ; date optionnelle avec la répétition (`picard hier` ne matche pas un libellé "picard hier" et renverra l'erreur standard — combinaison jugée rare).
