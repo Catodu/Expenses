@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="description" content="Saisie de dépenses ultra-rapide">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Dépenses</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --surface: #1a1d24;
+    --border: #2a2e38;
+    --text: #e8eaed;
+    --muted: #8a919e;
+    --accent: #4ade80;
+    --error: #f87171;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: max(16px, env(safe-area-inset-top)) 16px 16px;
+  }
+  main { width: 100%; max-width: 480px; }
+  h1 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  form { display: flex; gap: 8px; }
+  #txt {
+    flex: 1;
+    font-size: 22px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--text);
+    outline: none;
+    min-width: 0;
+  }
+  #txt:focus { border-color: var(--accent); }
+  #txt::placeholder { color: var(--muted); opacity: 0.6; }
+  button {
+    font-size: 22px;
+    padding: 0 20px;
+    background: var(--accent);
+    color: #08240f;
+    border: none;
+    border-radius: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button:active { opacity: 0.8; }
+  #toast {
+    margin-top: 14px;
+    min-height: 26px;
+    font-size: 17px;
+    font-weight: 500;
+    transition: opacity 0.3s;
+    opacity: 0;
+  }
+  #toast.show { opacity: 1; }
+  #toast.ok { color: var(--accent); }
+  #toast.err { color: var(--error); }
+  #toast.warn { color: var(--warn); }
+  #pending {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--warn);
+    min-height: 18px;
+  }
+  #history { margin-top: 20px; list-style: none; }
+  #history li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 4px;
+    border-bottom: 1px solid var(--border);
+    font-size: 15px;
+    color: var(--muted);
+  }
+  #history li .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #history li .status { flex-shrink: 0; }
+  #history li.ok .status { color: var(--accent); }
+  #history li.queued .status { color: var(--warn); }
+  #history li.error .status { color: var(--error); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dépenses</h1>
+  <form id="f" autocomplete="off">
+    <input id="txt" type="text" placeholder="40 picard" autofocus
+           autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+    <button type="submit" aria-label="Envoyer">➤</button>
+  </form>
+  <div id="toast" role="status"></div>
+  <div id="pending"></div>
+  <ul id="history"></ul>
+</main>
+
+<script>
+/* ================== CONFIG — à remplir (voir SETUP.md) ================== */
+const API_URL = 'COLLER_ICI_URL_WEBAPP_APPS_SCRIPT'; // .../exec
+const TOKEN   = 'COLLER_ICI_LE_TOKEN';
+/* ======================================================================== */
+
+const QKEY = 'expense_queue_v1';
+const txt = document.getElementById('txt');
+const form = document.getElementById('f');
+const toastEl = document.getElementById('toast');
+const pendingEl = document.getElementById('pending');
+const historyEl = document.getElementById('history');
+
+const history = []; // session uniquement, 5 dernières affichées
+let toastTimer = null;
+let flushing = false;
+
+const eur = new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' });
+
+// Date du jour en Europe/Brussels (fr-CA → format yyyy-mm-dd)
+function todayStr() {
+  return new Intl.DateTimeFormat('fr-CA', {
+    timeZone: 'Europe/Brussels', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+}
+
+function toast(msg, kind) {
+  toastEl.textContent = msg;
+  toastEl.className = 'show ' + kind;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.className = ''; }, 4000);
+}
+
+function getQueue() {
+  try { return JSON.parse(localStorage.getItem(QKEY)) || []; }
+  catch { return []; }
+}
+function setQueue(q) {
+  localStorage.setItem(QKEY, JSON.stringify(q));
+  pendingEl.textContent = q.length ? `⏳ ${q.length} en attente de synchronisation` : '';
+}
+
+function renderHistory() {
+  historyEl.innerHTML = '';
+  for (const h of history.slice(-5).reverse()) {
+    const li = document.createElement('li');
+    li.className = h.status;
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = h.text;
+    const status = document.createElement('span');
+    status.className = 'status';
+    status.textContent = h.info;
+    li.append(label, status);
+    historyEl.appendChild(li);
+  }
+}
+
+// POST "simple request" (pas de header custom → pas de preflight CORS,
+// Apps Script renvoie Access-Control-Allow-Origin: * → réponse lisible)
+async function apiSend(item) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ token: TOKEN, text: item.text, client_date: item.date })
+  });
+  return res.json();
+}
+
+async function submitEntry(text) {
+  const item = { text, date: todayStr() };
+  const entry = { text, status: 'pending', info: '…' };
+  history.push(entry);
+  renderHistory();
+
+  if (!navigator.onLine) {
+    queueItem(item, entry);
+    return;
+  }
+  try {
+    const data = await apiSend(item);
+    if (data.ok) {
+      entry.status = 'ok';
+      entry.info = `✓ ${eur.format(data.amount)} → ${data.category}`;
+      toast(`✓ ${eur.format(data.amount)} → ${data.category}`, 'ok');
+    } else if (data.error === 'unauthorized') {
+      entry.status = 'error';
+      entry.info = '✗ token';
+      toast('✗ Token invalide — vérifie la config.', 'err');
+      txt.value = text; // rien n'a été loggé : on garde la saisie
+    } else {
+      entry.status = 'error';
+      entry.info = '✗';
+      toast('✗ ' + (data.error || 'Erreur inconnue'), 'err');
+      txt.value = text;
+    }
+  } catch {
+    // Réseau KO ou réponse illisible : on met en file plutôt que de perdre.
+    queueItem(item, entry);
+  }
+  renderHistory();
+}
+
+function queueItem(item, entry) {
+  const q = getQueue();
+  q.push(item);
+  setQueue(q);
+  entry.status = 'queued';
+  entry.info = '⏳ hors-ligne';
+  toast('⏳ Hors-ligne — mis en file, sera synchronisé.', 'warn');
+  renderHistory();
+}
+
+async function flushQueue() {
+  if (flushing || !navigator.onLine) return;
+  const q = getQueue();
+  if (!q.length) return;
+  flushing = true;
+  try {
+    while (q.length) {
+      const data = await apiSend(q[0]); // rejette si réseau KO → on garde l'item
+      if (data.ok || (data.error && data.error !== 'unauthorized')) {
+        // ok, ou erreur de parsing définitive : on retire de la file
+        q.shift();
+        setQueue(q);
+        if (data.ok) toast(`✓ Synchronisé : ${eur.format(data.amount)} → ${data.category}`, 'ok');
+      } else {
+        break; // unauthorized : inutile d'insister
+      }
+    }
+  } catch { /* réseau : on réessaiera plus tard */ }
+  flushing = false;
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = txt.value.trim();
+  if (!text) return;
+  txt.value = '';
+  txt.focus();
+  submitEntry(text);
+});
+
+window.addEventListener('online', flushQueue);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { txt.focus(); flushQueue(); }
+});
+
+setQueue(getQueue()); // affiche le compteur au chargement
+flushQueue();
+txt.focus();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
