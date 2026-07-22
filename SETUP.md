@@ -70,6 +70,8 @@ const TOKEN   = 'abc123...';                                     // token de l'�
 
 ## Maintenance
 
+> Le projet est aussi relié via **clasp** ([apps-script/.clasp.json](apps-script/.clasp.json)) : après une modif de `Code.gs`, `clasp push -f` depuis `apps-script/`, puis `clasp redeploy <deploymentId>` (id visible via `clasp deployments`) pour mettre à jour la Web App sans changer d'URL.
+
 - **Ajouter un mot-clé** : ajoute une ligne dans l'onglet `categories` (keyword | categorie). Effet immédiat, rien à redéployer.
 - **Re-catégoriser d'anciennes lignes** : édite la colonne `categorie` de `log` à la main (la colonne `raw_input` garde la saisie d'origine).
 - **Régénérer le dashboard** (après modification) : ré-exécute `setup()` — il est idempotent, les données de `log` et `categories` ne sont jamais touchées.
