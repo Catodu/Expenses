@@ -443,7 +443,9 @@ function printNewToken() {
   Logger.log('TOKEN (à coller dans index.html) : ' + token);
 }
 
-/** Formules posées via setFormula (syntaxe en-US, insensible à la locale FR du Sheet). */
+/** setFormula interprète la formule dans la LOCALE du Sheet (fr_FR → ';').
+ *  Les formules ci-dessous sont écrites avec ';' et converties si besoin
+ *  après détection empirique du séparateur (cf. detectFormulaSeparator). */
 function buildDashboard(ss) {
   var dash = ss.getSheetByName(SHEET_DASH) || ss.insertSheet(SHEET_DASH);
   dash.clear();
@@ -451,18 +453,25 @@ function buildDashboard(ss) {
     dash.removeChart(c);
   });
 
+  var sep = detectFormulaSeparator(dash);
+  // tf : traduit une formule écrite avec ';' vers le séparateur détecté.
+  // Aucune de nos formules ne contient de ';' littéral dans une chaîne.
+  var tf = function (f) {
+    return sep === ';' ? f : f.replace(/;/g, sep);
+  };
+
   // Totaux
   dash.getRange('A1').setValue('Total mois en cours');
   dash
     .getRange('B1')
     .setFormula(
-      '=SUMIFS(log!C:C,log!B:B,">="&(EOMONTH(TODAY(),-1)+1),log!B:B,"<="&EOMONTH(TODAY(),0))'
+      tf('=SUMIFS(log!C:C;log!B:B;">="&(EOMONTH(TODAY();-1)+1);log!B:B;"<="&EOMONTH(TODAY();0))')
     );
   dash.getRange('A2').setValue('Total mois précédent');
   dash
     .getRange('B2')
     .setFormula(
-      '=SUMIFS(log!C:C,log!B:B,">="&(EOMONTH(TODAY(),-2)+1),log!B:B,"<="&EOMONTH(TODAY(),-1))'
+      tf('=SUMIFS(log!C:C;log!B:B;">="&(EOMONTH(TODAY();-2)+1);log!B:B;"<="&EOMONTH(TODAY();-1))')
     );
   dash.getRange('A3').setValue('Écart vs mois précédent');
   dash.getRange('B3').setFormula('=B1-B2');
@@ -475,7 +484,7 @@ function buildDashboard(ss) {
   dash
     .getRange('A6')
     .setFormula(
-      '=IFERROR(QUERY(log!B:E,"select E, sum(C) where B >= date \'"&TEXT(EOMONTH(TODAY(),-1)+1,"yyyy-mm-dd")&"\' group by E order by sum(C) desc label E \'Catégorie\', sum(C) \'Total\'",1),"—")'
+      tf('=IFERROR(QUERY(log!B:E;"select E, sum(C) where B >= date \'"&TEXT(EOMONTH(TODAY();-1)+1;"yyyy-mm-dd")&"\' group by E order by sum(C) desc label E \'Catégorie\', sum(C) \'Total\'";1);"—")')
     );
 
   // Top 10 libellés (mois en cours)
@@ -484,7 +493,7 @@ function buildDashboard(ss) {
   dash
     .getRange('D6')
     .setFormula(
-      '=IFERROR(QUERY(log!B:E,"select D, sum(C) where B >= date \'"&TEXT(EOMONTH(TODAY(),-1)+1,"yyyy-mm-dd")&"\' group by D order by sum(C) desc limit 10 label D \'Libellé\', sum(C) \'Total\'",1),"—")'
+      tf('=IFERROR(QUERY(log!B:E;"select D, sum(C) where B >= date \'"&TEXT(EOMONTH(TODAY();-1)+1;"yyyy-mm-dd")&"\' group by D order by sum(C) desc limit 10 label D \'Libellé\', sum(C) \'Total\'";1);"—")')
     );
 
   // Évolution sur 12 mois : lignes 7..18 (offsets -11 → 0)
@@ -496,15 +505,17 @@ function buildDashboard(ss) {
     var offset = r - 18; // -11 .. 0
     dash
       .getRange('G' + r)
-      .setFormula('=TEXT(EOMONTH(TODAY(),' + (offset - 1) + ')+1,"mm/yyyy")');
+      .setFormula(tf('=TEXT(EOMONTH(TODAY();' + (offset - 1) + ')+1;"mm/yyyy")'));
     dash
       .getRange('H' + r)
       .setFormula(
-        '=SUMIFS(log!C:C,log!B:B,">="&(EOMONTH(TODAY(),' +
-          (offset - 1) +
-          ')+1),log!B:B,"<="&EOMONTH(TODAY(),' +
-          offset +
-          '))'
+        tf(
+          '=SUMIFS(log!C:C;log!B:B;">="&(EOMONTH(TODAY();' +
+            (offset - 1) +
+            ')+1);log!B:B;"<="&EOMONTH(TODAY();' +
+            offset +
+            '))'
+        )
       );
   }
   dash.getRange('H7:H18').setNumberFormat('#,##0.00 "€"');
@@ -523,18 +534,20 @@ function buildDashboard(ss) {
     var off = r - 18; // -11 .. 0
     dash
       .getRange(r, 10)
-      .setFormula('=TEXT(EOMONTH(TODAY(),' + (off - 1) + ')+1,"mm/yyyy")');
+      .setFormula(tf('=TEXT(EOMONTH(TODAY();' + (off - 1) + ')+1;"mm/yyyy")'));
     for (c = 0; c < cats.length; c++) {
       dash
         .getRange(r, 11 + c)
         .setFormula(
-          '=SUMIFS(log!$C:$C,log!$B:$B,">="&(EOMONTH(TODAY(),' +
-            (off - 1) +
-            ')+1),log!$B:$B,"<="&EOMONTH(TODAY(),' +
-            off +
-            '),log!$E:$E,' +
-            colLetter(11 + c) +
-            '$6)'
+          tf(
+            '=SUMIFS(log!$C:$C;log!$B:$B;">="&(EOMONTH(TODAY();' +
+              (off - 1) +
+              ')+1);log!$B:$B;"<="&EOMONTH(TODAY();' +
+              off +
+              ');log!$E:$E;' +
+              colLetter(11 + c) +
+              '$6)'
+          )
         );
     }
   }
@@ -553,20 +566,24 @@ function buildDashboard(ss) {
     dash
       .getRange(r, 2)
       .setFormula(
-        '=IF($A' +
-          r +
-          '>DAY(TODAY()),"",SUMIFS(log!$C:$C,log!$B:$B,">="&(EOMONTH(TODAY(),-1)+1),log!$B:$B,"<="&(EOMONTH(TODAY(),-1)+$A' +
-          r +
-          ')))'
+        tf(
+          '=IF($A' +
+            r +
+            '>DAY(TODAY());"";SUMIFS(log!$C:$C;log!$B:$B;">="&(EOMONTH(TODAY();-1)+1);log!$B:$B;"<="&(EOMONTH(TODAY();-1)+$A' +
+            r +
+            ')))'
+        )
       );
     dash
       .getRange(r, 3)
       .setFormula(
-        '=IF($A' +
-          r +
-          '>DAY(EOMONTH(TODAY(),-1)),"",SUMIFS(log!$C:$C,log!$B:$B,">="&(EOMONTH(TODAY(),-2)+1),log!$B:$B,"<="&(EOMONTH(TODAY(),-2)+$A' +
-          r +
-          ')))'
+        tf(
+          '=IF($A' +
+            r +
+            '>DAY(EOMONTH(TODAY();-1));"";SUMIFS(log!$C:$C;log!$B:$B;">="&(EOMONTH(TODAY();-2)+1);log!$B:$B;"<="&(EOMONTH(TODAY();-2)+$A' +
+            r +
+            ')))'
+        )
       );
   }
   dash.getRange('B22:C52').setNumberFormat('#,##0 "€"');
@@ -617,6 +634,22 @@ function buildDashboard(ss) {
       .setPosition(40, 7, 0, 0)
       .build()
   );
+}
+
+/** Détection empirique du séparateur d'arguments selon la locale du Sheet :
+ *  pose =SUM(1;2) dans une cellule brouillon — si ça vaut 3, c'est ';'. */
+function detectFormulaSeparator(sheet) {
+  var cell = sheet.getRange('Z100');
+  var sep;
+  try {
+    cell.setFormula('=SUM(1;2)');
+    SpreadsheetApp.flush();
+    sep = cell.getValue() === 3 ? ';' : ',';
+  } catch (err) {
+    sep = ','; // locale en-US : '=SUM(1;2)' peut être rejeté d'emblée
+  }
+  cell.clear();
+  return sep;
 }
 
 /** Catégories distinctes de l'onglet categories (ordre d'apparition) + 'autre'. */

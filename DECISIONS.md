@@ -28,9 +28,10 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Détail** : une erreur de **parsing** renvoyée par le serveur lors du flush retire l'item de la file (le renvoyer ne le réparera pas) ; un `unauthorized` stoppe le flush sans vider la file.
 
 ## D6 — `setup()` programmatique au lieu d'instructions manuelles
-**Choix** : une fonction `setup()` idempotente crée les onglets, seed les ~55 mots-clés, pose les formules du dashboard et insère les 2 graphiques.
-**Raison** : (a) élimine 10 minutes de copier-coller sujet aux erreurs ; (b) surtout, `setFormula()` utilise la syntaxe en-US (séparateur `,`) quelle que soit la locale du Sheet — le copier-coller manuel de formules casse sur une locale FR (séparateur `;`).
+**Choix** : une fonction `setup()` idempotente crée les onglets, seed les ~55 mots-clés, pose les formules du dashboard et insère les graphiques.
+**Raison** : élimine 10 minutes de copier-coller sujet aux erreurs.
 **Idempotence** : ré-exécutable ; `log` et `categories` ne sont jamais réécrits s'ils contiennent des données, seul `dashboard` est reconstruit.
+**⚠️ Corrigé par [D23]** : la justification initiale « `setFormula()` utilise la syntaxe en-US quelle que soit la locale » était **fausse** — voir D23.
 
 ## D7 — Token généré par `printNewToken()`, stocké dans ScriptProperties
 **Choix** : helper qui génère un token (2 UUID concaténés) et le stocke dans `ScriptProperties` côté serveur.
@@ -106,3 +107,9 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Choix** : (a) le récap texte devient deux **tuiles** côte à côte (Aujourd'hui / Ce mois) avec gros chiffres tabulaires ; (b) le **toast** passe en overlay fixe bas d'écran — il ne réserve plus d'espace dans le flux (c'était la cause du grand vide sous le champ, ×3 en pixels physiques sur mobile) ; (c) chaque catégorie reçoit une **couleur stable** dérivée d'un hash de son nom (`hsl(h 45% 55%)`), utilisée dans les barres et en pastille dans la liste du jour ; (d) compteur hors-ligne masqué quand la file est vide.
 **Raison** : hiérarchie visuelle (les deux chiffres qui comptent d'abord), densité verticale (le contenu remonte sous le champ), lisibilité de la liste (pastille couleur + catégorie en petit).
 **Écarté** : palette fixe par catégorie (à maintenir à la main à chaque nouvelle catégorie — le hash est automatique et cohérent entre sessions).
+
+## D23 — Post-mortem : `setFormula` dépend de la locale du Sheet (D6 était faux)
+**Constat** (signalé par l'utilisateur : « les formules du gsheet sont erronées ») : sur un Sheet en locale `fr_FR`, **tout** le dashboard était en `#ERROR!`. Contrairement à l'hypothèse de [D6], `Range.setFormula()` interprète la chaîne **dans la locale du Sheet** : en fr_FR, `=EOMONTH(TODAY(),-1)` est une erreur de syntaxe, et plus vicieux, `=SUM(1,2)` vaut **1,2** (la virgule devient décimale — résultat silencieusement faux, pas d'erreur visible).
+**Preuve** (test empirique dans le Sheet réel) : `=SUM(1,2)` → `1,2` ; `=SUM(1;2)` → `3` ; `=EOMONTH(TODAY(),-1)` → `#ERROR!` ; `=EOMONTH(TODAY();-1)` → `30/06/2026`.
+**Correctif** : `buildDashboard()` détecte le séparateur **empiriquement** à chaque construction (pose `=SUM(1;2)` dans une cellule brouillon : 3 → `;`, sinon `,`) et traduit toutes les formules, écrites en interne avec `;`. Robuste pour toute locale, y compris si elle change plus tard (il suffit d'un rebuild).
+**Leçon** : vérifier les valeurs calculées après construction (les formules étaient posées sans erreur d'exécution Apps Script — l'erreur n'était visible que dans les cellules).
