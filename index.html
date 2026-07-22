@@ -32,12 +32,12 @@
   }
   main { width: 100%; max-width: 480px; }
   h1 {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--muted);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   form { display: flex; gap: 8px; }
   #txt {
@@ -53,17 +53,6 @@
   }
   #txt:focus { border-color: var(--accent); }
   #txt::placeholder { color: var(--muted); opacity: 0.6; }
-  #noToken {
-    margin-top: 4px;
-    padding: 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    font-size: 15px;
-    line-height: 1.5;
-    color: var(--warn);
-  }
-  #noToken code { color: var(--text); }
   button {
     font-size: 22px;
     padding: 0 20px;
@@ -75,31 +64,54 @@
     cursor: pointer;
   }
   button:active { opacity: 0.8; }
-  #toast {
-    margin-top: 14px;
-    min-height: 26px;
-    font-size: 17px;
-    font-weight: 500;
-    transition: opacity 0.3s;
-    opacity: 0;
-  }
-  #toast.show { opacity: 1; }
-  #toast.ok { color: var(--accent); }
-  #toast.err { color: var(--error); }
-  #toast.warn { color: var(--warn); }
+
   #pending {
-    margin-top: 6px;
+    margin-top: 10px;
     font-size: 13px;
     color: var(--warn);
-    min-height: 18px;
   }
-  #recapTotal {
-    margin-top: 22px;
-    font-size: 15px;
+  #pending[hidden] { display: none; }
+
+  /* Tuiles de stats */
+  #stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .tileLabel {
+    font-size: 11px;
+    font-weight: 600;
     color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
-  #recapTotal strong { color: var(--text); font-size: 18px; }
-  #catBars { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+  .tileValue {
+    font-size: 24px;
+    font-weight: 700;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tileSub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+    min-height: 15px;
+  }
+
+  /* Barres par catégorie (mois) */
+  #catBars {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
   .catRow {
     display: flex;
     align-items: center;
@@ -108,8 +120,7 @@
     color: var(--muted);
   }
   .catRow .name {
-    width: 96px;
-    text-align: right;
+    width: 90px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -125,30 +136,92 @@
   .catRow .bar i {
     display: block;
     height: 100%;
-    background: var(--accent);
     border-radius: 5px;
-    opacity: 0.85;
+    opacity: 0.9;
   }
-  .catRow .amt { width: 72px; text-align: right; flex-shrink: 0; }
-  #history { margin-top: 8px; list-style: none; }
+  .catRow .amt {
+    width: 76px;
+    text-align: right;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Liste du jour + saisies en cours */
+  #listTitle {
+    margin-top: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  #listTitle[hidden] { display: none; }
+  #history { margin-top: 4px; list-style: none; }
   #history li {
     display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 4px;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 2px;
     border-bottom: 1px solid var(--border);
     font-size: 15px;
-    color: var(--muted);
+  }
+  #history li .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
   #history li .label {
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  #history li .status { flex-shrink: 0; }
-  #history li.ok .status { color: var(--accent); }
-  #history li.queued .status { color: var(--warn); }
-  #history li.error .status { color: var(--error); }
+  #history li .label small { color: var(--muted); font-size: 13px; }
+  #history li .amt {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  #history li.pending, #history li.queued, #history li.error { color: var(--muted); }
+  #history li.queued .amt { color: var(--warn); }
+  #history li.error .amt { color: var(--error); }
+
+  #noToken {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--warn);
+  }
+  #noToken code { color: var(--text); }
+
+  /* Toast en overlay : ne réserve aucun espace dans la page */
+  #toast {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    max-width: 448px;
+    margin: 0 auto;
+    padding: 13px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 500;
+    text-align: center;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.25s, transform 0.25s;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.ok { color: var(--accent); }
+  #toast.err { color: var(--error); }
+  #toast.warn { color: var(--warn); }
 </style>
 </head>
 <body>
@@ -159,16 +232,28 @@
            autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
     <button type="submit" aria-label="Envoyer">➤</button>
   </form>
+  <div id="pending" hidden></div>
+  <section id="stats">
+    <div class="tile">
+      <div class="tileLabel">Aujourd’hui</div>
+      <div class="tileValue" id="statDay">—</div>
+      <div class="tileSub" id="statDaySub"></div>
+    </div>
+    <div class="tile">
+      <div class="tileLabel">Ce mois</div>
+      <div class="tileValue" id="statMonth">—</div>
+      <div class="tileSub" id="statMonthSub"></div>
+    </div>
+  </section>
+  <div id="catBars"></div>
+  <div id="listTitle" hidden>Aujourd’hui</div>
+  <ul id="history"></ul>
   <div id="noToken" hidden>
     Token manquant ou invalide.<br>
     Rouvre l’app via ton lien d’installation (celui qui se termine par
     <code>#token=…</code>) — il réenregistre le token sur cet appareil.
   </div>
   <div id="toast" role="status"></div>
-  <div id="pending"></div>
-  <div id="recapTotal"></div>
-  <div id="catBars"></div>
-  <ul id="history"></ul>
 </main>
 
 <script>
@@ -201,8 +286,13 @@ const form = document.getElementById('f');
 const toastEl = document.getElementById('toast');
 const pendingEl = document.getElementById('pending');
 const historyEl = document.getElementById('history');
-const recapTotalEl = document.getElementById('recapTotal');
+const listTitleEl = document.getElementById('listTitle');
+const statDayEl = document.getElementById('statDay');
+const statDaySubEl = document.getElementById('statDaySub');
+const statMonthEl = document.getElementById('statMonth');
+const statMonthSubEl = document.getElementById('statMonthSub');
 const catBarsEl = document.getElementById('catBars');
+const noTokenEl = document.getElementById('noToken');
 
 const history = []; // saisies de la session (les non-confirmées restent affichées)
 let dayRecap = null; // dernier récap du jour renvoyé par le backend
@@ -218,6 +308,13 @@ function todayStr() {
   }).format(new Date());
 }
 
+/* Couleur stable par catégorie (même teinte dans les barres et la liste). */
+function catColor(name) {
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `hsl(${h} 45% 55%)`;
+}
+
 function toast(msg, kind) {
   toastEl.textContent = msg;
   toastEl.className = 'show ' + kind;
@@ -231,33 +328,46 @@ function getQueue() {
 }
 function setQueue(q) {
   localStorage.setItem(QKEY, JSON.stringify(q));
+  pendingEl.hidden = q.length === 0;
   pendingEl.textContent = q.length ? `⏳ ${q.length} en attente de synchronisation` : '';
 }
 
-/* Liste affichée : saisies de session non confirmées (pending/queued/error)
-   en tête, puis les dépenses du jour renvoyées par le backend. */
+function showNoToken() {
+  noTokenEl.hidden = false;
+  form.hidden = true;
+}
+
+/* Rendu : tuiles de stats, barres par catégorie, puis liste = saisies de
+   session non confirmées (pending/queued/error) + dépenses du jour. */
 function renderHistory() {
   historyEl.innerHTML = '';
-  for (const h of history.filter((h) => h.status !== 'ok').slice(-5).reverse()) {
+
+  const unconfirmed = history.filter((h) => h.status !== 'ok').slice(-5).reverse();
+  for (const h of unconfirmed) {
     const li = document.createElement('li');
     li.className = h.status;
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = 'var(--border)';
     const label = document.createElement('span');
     label.className = 'label';
     label.textContent = h.text;
-    const status = document.createElement('span');
-    status.className = 'status';
-    status.textContent = h.info;
-    li.append(label, status);
+    const amt = document.createElement('span');
+    amt.className = 'amt';
+    amt.textContent = h.info;
+    li.append(dot, label, amt);
     historyEl.appendChild(li);
   }
+
   if (dayRecap) {
-    recapTotalEl.innerHTML = '';
-    const s = document.createElement('strong');
-    s.textContent = eur.format(dayRecap.total);
-    const m = document.createElement('strong');
-    m.textContent = eur.format(dayRecap.month_total);
-    recapTotalEl.append('Aujourd’hui : ', s,
-      ` · ${dayRecap.count} dépense${dayRecap.count > 1 ? 's' : ''} · Mois : `, m);
+    statDayEl.textContent = eur.format(dayRecap.total);
+    statDaySubEl.textContent =
+      `${dayRecap.count} dépense${dayRecap.count > 1 ? 's' : ''}`;
+    statMonthEl.textContent = eur.format(dayRecap.month_total);
+    const nCats = (dayRecap.by_category || []).length;
+    statMonthSubEl.textContent =
+      nCats ? `${nCats} catégorie${nCats > 1 ? 's' : ''}` : '';
+
     catBarsEl.innerHTML = '';
     const cats = dayRecap.by_category || [];
     const maxCat = cats.length ? cats[0].total : 0;
@@ -271,6 +381,7 @@ function renderHistory() {
       bar.className = 'bar';
       const fill = document.createElement('i');
       fill.style.width = maxCat ? `${Math.max(2, (c.total / maxCat) * 100)}%` : '0%';
+      fill.style.background = catColor(c.categorie);
       bar.appendChild(fill);
       const amt = document.createElement('span');
       amt.className = 'amt';
@@ -278,17 +389,27 @@ function renderHistory() {
       row.append(name, bar, amt);
       catBarsEl.appendChild(row);
     }
-    for (const it of dayRecap.items.slice().reverse()) {
+
+    const items = dayRecap.items.slice().reverse();
+    listTitleEl.hidden = items.length === 0 && unconfirmed.length === 0;
+    for (const it of items) {
       const li = document.createElement('li');
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = catColor(it.categorie);
       const label = document.createElement('span');
       label.className = 'label';
-      label.textContent = `${it.libelle} · ${it.categorie}`;
-      const status = document.createElement('span');
-      status.className = 'status';
-      status.textContent = eur.format(it.montant);
-      li.append(label, status);
+      const small = document.createElement('small');
+      small.textContent = ` · ${it.categorie}`;
+      label.append(it.libelle, small);
+      const amt = document.createElement('span');
+      amt.className = 'amt';
+      amt.textContent = eur.format(it.montant);
+      li.append(dot, label, amt);
       historyEl.appendChild(li);
     }
+  } else {
+    listTitleEl.hidden = unconfirmed.length === 0;
   }
 }
 
@@ -384,13 +505,6 @@ async function flushQueue() {
   } catch { /* réseau : on réessaiera plus tard */ }
   flushing = false;
   if (synced > 0) fetchRecap();
-}
-
-const noTokenEl = document.getElementById('noToken');
-
-function showNoToken() {
-  noTokenEl.hidden = false;
-  form.hidden = true;
 }
 
 form.addEventListener('submit', (e) => {
