@@ -32,10 +32,10 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Raison** : (a) élimine 10 minutes de copier-coller sujet aux erreurs ; (b) surtout, `setFormula()` utilise la syntaxe en-US (séparateur `,`) quelle que soit la locale du Sheet — le copier-coller manuel de formules casse sur une locale FR (séparateur `;`).
 **Idempotence** : ré-exécutable ; `log` et `categories` ne sont jamais réécrits s'ils contiennent des données, seul `dashboard` est reconstruit.
 
-## D7 — Token généré par `printNewToken()` et visible dans index.html
-**Choix** : helper qui génère un token (2 UUID concaténés), le stocke dans `ScriptProperties` et l'affiche dans le log ; côté client, constante en clair dans `index.html`.
+## D7 — Token généré par `printNewToken()`, stocké dans ScriptProperties
+**Choix** : helper qui génère un token (2 UUID concaténés) et le stocke dans `ScriptProperties` côté serveur.
 **Menace couverte** : POST anonymes qui pollueraient le Sheet si l'URL `/exec` fuitait.
-**Menace non couverte (assumée, cf. brief)** : quiconque lit le source de la page GitHub Pages a le token. Données non sensibles (montants + libellés), risque accepté. Mitigation possible plus tard : servir la PWA depuis Apps Script (HtmlService) pour tout garder privé.
+**Révisé par [D14]** : le brief prévoyait le token en constante dans `index.html` ; abandonné au profit du `localStorage`.
 
 ## D8 — Dates relatives : `hier`, `avant-hier`, `avant hier`, `JJ/MM[/AAAA]`
 **Choix** : token de date détecté **uniquement en fin de saisie** (dernier token). `JJ/MM` sans année : année courante, ou année précédente si la date serait dans le futur (saisir `40 resto 28/12` un 3 janvier → 28/12 de l'an passé).
@@ -61,3 +61,9 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 ## D13 — Colonne `date` écrite comme objet `Date`, pas comme texte
 **Choix** : le backend convertit `'yyyy-MM-dd'` en objet `Date` à minuit Europe/Brussels (`dateForSheet()`) avant l'append.
 **Raison** : une chaîne `"2026-07-22"` peut rester du **texte** selon la locale du Sheet — et tout le dashboard (SUMIFS, QUERY sur dates) échouerait silencieusement (totaux à 0 €). Minuit pile est aussi nécessaire pour que la borne `<= EOMONTH(...)` inclue le dernier jour du mois. `setup()` force le fuseau du Sheet à Europe/Brussels pour que la conversion instant→cellule tombe juste.
+
+## D14 — Token hors du code : `localStorage` + lien `#token=...`
+**Choix** : aucune trace du token dans le repo ni dans la page servie. Il est fourni une fois par appareil — via le fragment d'URL `#token=XXX` (jamais envoyé au serveur, stocké en `localStorage` puis retiré de la barre d'adresse par `history.replaceState`) ou via un champ de config affiché tant qu'aucun token n'est enregistré. Un rejet `unauthorized` raffiche le champ sans perdre la saisie.
+**Raison** : demande utilisateur ("pas en dur, comme une var d'env"). Une vraie var d'env n'existe pas pour une page statique (le navigateur doit recevoir le secret d'une façon ou d'une autre) ; le `localStorage` est l'équivalent le plus proche : le secret ne vit que sur les appareils autorisés. Permet un repo **public** (GitHub Pages gratuit) sans exposer le token.
+**Conséquence** : l'ancien token, présent dans l'historique git (commit 9668518), a été **révoqué** (rotation côté ScriptProperties) avant le passage en public.
+**Écarté** : injection au build via GitHub Actions + secret (sort le token du repo mais pas du source de la page déployée) ; HtmlService (perd le service worker donc le hors-ligne, et l'installation standalone — cf. critères de done).

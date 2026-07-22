@@ -40,7 +40,7 @@
     margin-bottom: 12px;
   }
   form { display: flex; gap: 8px; }
-  #txt {
+  #txt, #cfgToken {
     flex: 1;
     font-size: 22px;
     padding: 16px;
@@ -51,8 +51,9 @@
     outline: none;
     min-width: 0;
   }
-  #txt:focus { border-color: var(--accent); }
-  #txt::placeholder { color: var(--muted); opacity: 0.6; }
+  #txt:focus, #cfgToken:focus { border-color: var(--accent); }
+  #txt::placeholder, #cfgToken::placeholder { color: var(--muted); opacity: 0.6; }
+  #cfgToken { font-size: 15px; }
   button {
     font-size: 22px;
     padding: 0 20px;
@@ -111,16 +112,32 @@
            autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
     <button type="submit" aria-label="Envoyer">➤</button>
   </form>
+  <form id="cfg" autocomplete="off" hidden>
+    <input id="cfgToken" type="text" placeholder="colle le token ici"
+           autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button type="submit" aria-label="Enregistrer">✓</button>
+  </form>
   <div id="toast" role="status"></div>
   <div id="pending"></div>
   <ul id="history"></ul>
 </main>
 
 <script>
-/* ================== CONFIG — à remplir (voir SETUP.md) ================== */
+/* ================== CONFIG (voir SETUP.md) ================== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbyQpXQQEc8Jt553I5TMxilA2U6xxgOHNko0bcmzio6rwCS7EVgp7kVzi0aGIM67Dv93/exec';
-const TOKEN   = '9522bc72f0f0431298b48e44fa20ab9aed88c6d6189349149cbebfffbae558ce';
-/* ======================================================================== */
+/* Le token n'est PAS dans le code : fourni une fois via ...#token=XXX
+   (ou collé dans le champ de config), puis conservé en localStorage. */
+const TKEY = 'expense_token_v1';
+let TOKEN = null;
+{
+  const m = location.hash.match(/^#token=([A-Za-z0-9_-]+)$/);
+  if (m) {
+    localStorage.setItem(TKEY, m[1]);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  TOKEN = localStorage.getItem(TKEY);
+}
+/* ============================================================ */
 
 const QKEY = 'expense_queue_v1';
 const txt = document.getElementById('txt');
@@ -203,8 +220,8 @@ async function submitEntry(text) {
     } else if (data.error === 'unauthorized') {
       entry.status = 'error';
       entry.info = '✗ token';
-      toast('✗ Token invalide — vérifie la config.', 'err');
       txt.value = text; // rien n'a été loggé : on garde la saisie
+      showConfig('✗ Token invalide ou manquant — colle le token :');
     } else {
       entry.status = 'error';
       entry.info = '✗';
@@ -249,6 +266,29 @@ async function flushQueue() {
   flushing = false;
 }
 
+const cfg = document.getElementById('cfg');
+const cfgToken = document.getElementById('cfgToken');
+
+function showConfig(msg) {
+  cfg.hidden = false;
+  form.hidden = true;
+  toast(msg, 'warn');
+  cfgToken.focus();
+}
+
+cfg.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const value = cfgToken.value.trim();
+  if (!value) return;
+  localStorage.setItem(TKEY, value);
+  TOKEN = value;
+  cfgToken.value = '';
+  cfg.hidden = true;
+  form.hidden = false;
+  toast('✓ Token enregistré.', 'ok');
+  txt.focus();
+});
+
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const text = txt.value.trim();
@@ -264,8 +304,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 setQueue(getQueue()); // affiche le compteur au chargement
-flushQueue();
-txt.focus();
+if (!TOKEN) {
+  showConfig('Première utilisation : colle le token (voir SETUP.md).');
+} else {
+  flushQueue();
+  txt.focus();
+}
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
