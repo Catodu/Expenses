@@ -174,18 +174,25 @@
 <script>
 /* ================== CONFIG (voir SETUP.md) ================== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbyQpXQQEc8Jt553I5TMxilA2U6xxgOHNko0bcmzio6rwCS7EVgp7kVzi0aGIM67Dv93/exec';
-/* Le token n'est PAS dans le code : fourni une fois via ...#token=XXX
-   (ou collé dans le champ de config), puis conservé en localStorage. */
+/* Le token n'est PAS dans le code : fourni une fois via le lien
+   d'installation ...#token=XXX, puis conservé en localStorage. */
 const TKEY = 'expense_token_v1';
-let TOKEN = null;
-{
+let TOKEN = localStorage.getItem(TKEY);
+
+function captureTokenFromHash() {
   const m = location.hash.match(/^#token=([A-Za-z0-9_-]+)$/);
-  if (m) {
-    localStorage.setItem(TKEY, m[1]);
+  if (!m) return false;
+  localStorage.setItem(TKEY, m[1]);
+  TOKEN = m[1];
+  // Nettoie la barre d'adresse ; jamais bloquant si l'API manque.
+  try {
     history.replaceState(null, '', location.pathname + location.search);
+  } catch {
+    try { location.hash = ''; } catch { /* tant pis, le token est stocké */ }
   }
-  TOKEN = localStorage.getItem(TKEY);
+  return true;
 }
+captureTokenFromHash();
 /* ============================================================ */
 
 const QKEY = 'expense_queue_v1';
@@ -439,6 +446,17 @@ async function undoLast() {
     toast('✗ Réseau indisponible — réessaie pour annuler.', 'err');
   }
 }
+
+window.addEventListener('hashchange', () => {
+  if (captureTokenFromHash()) {
+    noTokenEl.hidden = true;
+    form.hidden = false;
+    toast('✓ Token enregistré.', 'ok');
+    flushQueue();
+    fetchRecap();
+    txt.focus();
+  }
+});
 
 window.addEventListener('online', flushQueue);
 document.addEventListener('visibilitychange', () => {
