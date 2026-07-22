@@ -40,6 +40,12 @@ function doPost(e) {
     if (body.action === 'undo') {
       return jsonOut(undoLast());
     }
+    if (body.action === 'add_mapping') {
+      return jsonOut(addMapping(body.keyword, body.categorie));
+    }
+    if (body.action === 'recategorize') {
+      return jsonOut(recategorizeUnmapped());
+    }
 
     var text = String(body.text || '');
     var defaultDate = validIsoDate(body.client_date) || todayStr();
@@ -83,6 +89,9 @@ function doGet(e) {
   if (e.parameter.action === 'rebuild_dashboard') {
     buildDashboard(SpreadsheetApp.getActive());
     return jsonOut({ ok: true, rebuilt: true });
+  }
+  if (e.parameter.action === 'unmapped') {
+    return jsonOut(listUnmapped());
   }
   var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
   var lastRow = sheet.getLastRow();
@@ -166,6 +175,71 @@ function undoLast() {
       categorie: String(v[4])
     }
   };
+}
+
+/** Dépenses restées en 'autre', agrégées par libellé (pour le re-mapping). */
+function listUnmapped() {
+  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
+  var lastRow = sheet.getLastRow();
+  var agg = {};
+  if (lastRow > 1) {
+    // B..E : date | montant | libelle | categorie
+    var vals = sheet.getRange(2, 2, lastRow - 1, 4).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][3]) !== 'autre') continue;
+      var lib = String(vals[i][2]);
+      if (!agg[lib]) agg[lib] = { libelle: lib, count: 0, total: 0 };
+      agg[lib].count++;
+      agg[lib].total += Number(vals[i][1]) || 0;
+    }
+  }
+  var items = Object.keys(agg).map(function (k) {
+    agg[k].total = Math.round(agg[k].total * 100) / 100;
+    return agg[k];
+  });
+  items.sort(function (a, b) {
+    return b.total - a.total;
+  });
+  return { ok: true, count: items.length, items: items };
+}
+
+/** Ajoute un mot-clé → catégorie dans l'onglet categories (sans doublon). */
+function addMapping(keyword, categorie) {
+  var kw = normalizeStr(String(keyword || ''));
+  var cat = String(categorie || '').trim();
+  if (!kw || !cat) {
+    return { ok: false, error: 'keyword et categorie requis.' };
+  }
+  var rules = loadCategoryRules();
+  for (var i = 0; i < rules.length; i++) {
+    if (rules[i].keyword === kw) {
+      return { ok: false, error: 'Mot-clé déjà mappé → ' + rules[i].category };
+    }
+  }
+  SpreadsheetApp.getActive().getSheetByName(SHEET_CAT).appendRow([kw, cat]);
+  return { ok: true, added: { keyword: kw, categorie: cat } };
+}
+
+/** Repasse la catégorisation sur toutes les lignes restées en 'autre'. */
+function recategorizeUnmapped() {
+  var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
+  var lastRow = sheet.getLastRow();
+  var changed = [];
+  if (lastRow > 1) {
+    // D..E : libelle | categorie
+    var range = sheet.getRange(2, 4, lastRow - 1, 2);
+    var vals = range.getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][1]) !== 'autre') continue;
+      var cat = categorize(String(vals[i][0]));
+      if (cat !== 'autre') {
+        vals[i][1] = cat;
+        changed.push({ libelle: String(vals[i][0]), categorie: cat });
+      }
+    }
+    if (changed.length) range.setValues(vals);
+  }
+  return { ok: true, changed: changed.length, details: changed };
 }
 
 /** Dernier montant loggé pour ce libellé exact (normalisé), sinon null. */

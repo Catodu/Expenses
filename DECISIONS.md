@@ -113,3 +113,9 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Preuve** (test empirique dans le Sheet réel) : `=SUM(1,2)` → `1,2` ; `=SUM(1;2)` → `3` ; `=EOMONTH(TODAY(),-1)` → `#ERROR!` ; `=EOMONTH(TODAY();-1)` → `30/06/2026`.
 **Correctif** : `buildDashboard()` détecte le séparateur **empiriquement** à chaque construction (pose `=SUM(1;2)` dans une cellule brouillon : 3 → `;`, sinon `,`) et traduit toutes les formules, écrites en interne avec `;`. Robuste pour toute locale, y compris si elle change plus tard (il suffit d'un rebuild).
 **Leçon** : vérifier les valeurs calculées après construction (les formules étaient posées sans erreur d'exécution Apps Script — l'erreur n'était visible que dans les cellules).
+
+## D24 — Actions d'administration du dict : `unmapped`, `add_mapping`, `recategorize`
+**Choix** : trois actions token-protégées pour gérer le dict de catégories **à distance** (sans ouvrir le Sheet ni l'éditeur) : `GET ?action=unmapped` (dépenses restées en `autre`, agrégées par libellé), `POST action=add_mapping {keyword, categorie}` (ajout avec normalisation + refus des doublons), `POST action=recategorize` (repasse la catégorisation sur toutes les lignes `autre` avec le dict courant — ne touche jamais une ligne déjà catégorisée, y compris re-catégorisée à la main).
+**Raison** : (a) permet d'administrer le dict depuis n'importe quel client HTTP — dont un **agent Claude planifié** qui ferait le tri des `autre` périodiquement ; (b) a servi immédiatement à ajouter la catégorie `chat` sans manipulation manuelle.
+**Rappel** : après `add_mapping` d'une **nouvelle** catégorie, faire un `rebuild_dashboard` (colonne de la matrice, cf. [D21]).
+**Cas d'école** : le mot-clé `chat` n'a PAS été ajouté — en matching par sous-chaîne ([D3]) il capturerait `achat`/`achats`. La catégorie vit via `charloe`, `veto`, `veterinaire`, `croquette`, `litiere`.
