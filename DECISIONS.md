@@ -119,3 +119,28 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Raison** : (a) permet d'administrer le dict depuis n'importe quel client HTTP — dont un **agent Claude planifié** qui ferait le tri des `autre` périodiquement ; (b) a servi immédiatement à ajouter la catégorie `chat` sans manipulation manuelle.
 **Rappel** : après `add_mapping` d'une **nouvelle** catégorie, faire un `rebuild_dashboard` (colonne de la matrice, cf. [D21]).
 **Cas d'école** : le mot-clé `chat` n'a PAS été ajouté — en matching par sous-chaîne ([D3]) il capturerait `achat`/`achats`. La catégorie vit via `charloe`, `veto`, `veterinaire`, `croquette`, `litiere`.
+
+## D25 — Review FE : shadowing de `window.history`, courses, SW stale-while-revalidate
+**Constat** (review du front) : trois défauts.
+(a) `const history = []` masquait `window.history` → `history.replaceState()` dans `captureTokenFromHash()` ne s'exécutait jamais (ReferenceError TDZ au chargement, TypeError sur `hashchange`, tous deux avalés par le try/catch) ; c'était le fallback `location.hash = ''` qui nettoyait l'URL, en laissant un `#` résiduel. **Correctif** : tableau renommé `session`.
+(b) `flushQueue()` travaillait sur un snapshot de la file : une saisie mise en file pendant un `await apiSend()` (fetch qui échoue pendant la synchro) était **écrasée** par le `setQueue(snapshot)` suivant — violation du critère "ne jamais perdre une saisie" ([D5]). **Correctif** : la file est relue depuis `localStorage` à chaque tour de boucle.
+(c) Deux `fetchRecap()` concurrents (saisie confirmée + retour au premier plan) pouvaient se résoudre dans le désordre → récap périmé affiché. **Correctif** : compteur de séquence, seule la réponse du dernier appel est rendue.
+**En plus** : `aria-label` sur le champ de saisie et `role="status"` sur le compteur hors-ligne (accessibilité).
+
+## D26 — SW : stale-while-revalidate au lieu de cache-first pur
+**Choix** : le SW sert le cache immédiatement puis rafraîchit l'asset en arrière-plan (`cache.put` si réponse ok) — la prochaine ouverture a la nouvelle version.
+**Raison** : le cache-first pur ([D11]) exigeait de penser à bumper `expenses-vN` à chaque évolution des assets ("rappel opérationnel" de [D15]) — un oubli et les téléphones restaient figés sur l'ancienne version. Le SWR garde l'ouverture instantanée hors-ligne (critère de done) tout en supprimant ce piège humain.
+**Conséquence** : le bump de `CACHE` n'est plus nécessaire pour diffuser une mise à jour (une ouverture en ligne suffit, la suivante l'affiche) ; il reste utile pour purger des assets supprimés. Bump ponctuel `v6 → v7` pour migrer les clients existants.
+**Écarté** : network-first sur `index.html` (ouverture ralentie par le timeout réseau en zone blanche — contraire au "zéro-friction").
+
+## D27 — Couleurs par catégorie : palette fixe validée au lieu du hash HSL
+**Constat** : le hash `hsl(h 45% 55%)` de [D22] produisait des teintes trop proches entre catégories (tout à la même saturation/luminosité, teintes au hasard) — demande utilisateur : « couleurs différentes pour les catégories ».
+**Choix** : carte fixe catégorie → couleur, en dur dans `index.html`. 8 slots issus d'une palette catégorielle validée pour fond sombre + 3 teintes complémentaires (cyan, lime, brun) + **gris neutre pour `autre`** (sémantique du fourre-tout). Vérifiée par script (validateur de palette) contre la surface réelle `#1a1d24` : bande de luminosité OKLCH 0.48–0.67, chroma ≥ 0.1, contraste ≥ 3:1 — tout passe. Assignation sémantique quand ça tombe bien (nourriture=vert, santé=rouge, chat=brun…).
+**Limite mesurée** : au-delà de ~4 couleurs, aucune palette ne peut garantir la séparation daltonisme sur *toutes* les paires (mathématiquement impossible — la pire paire ici : rouge/orange ΔE 7.1 en vision normale). Parade standard : l'identité n'est jamais portée par la couleur seule — chaque barre et chaque ligne affiche le nom de la catégorie en texte. C'était déjà le cas.
+**Fallback** : catégorie inconnue (ajoutée via `add_mapping` sans mise à jour de la carte) → hash stable vers un slot de la même palette (même couleur sur tous les appareils) ; le gris reste réservé à `autre`. Ajouter la nouvelle catégorie à `CAT_COLORS` à l'occasion.
+**Écarté** : hash amélioré (ne résout pas la proximité des teintes) ; assignation par rang du mois (la couleur doit suivre l'entité, pas son rang — sinon les couleurs changent chaque mois).
+
+## D28 — `form[hidden]` neutralisé par `display:flex` (bug pré-existant, vu en vérifiant D27)
+**Constat** (capture d'écran de l'état sans token) : le formulaire restait **visible** en même temps que le message « Token manquant » — `form.hidden = true` dans `showNoToken()` était sans effet car la règle auteur `form { display: flex }` écrase le `display: none` que le navigateur applique à `[hidden]`.
+**Correctif** : règle `form[hidden] { display: none; }` — le même pattern existait déjà pour `#pending` et `#listTitle`, seul `form` avait été oublié.
+**Leçon** : tout élément qui reçoit un `display` explicite en CSS **et** est masqué via l'attribut `hidden` doit avoir sa règle `[hidden]` dédiée.

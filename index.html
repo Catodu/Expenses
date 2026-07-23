@@ -40,6 +40,7 @@
     margin-bottom: 10px;
   }
   form { display: flex; gap: 8px; }
+  form[hidden] { display: none; } /* sinon display:flex écrase l'attribut hidden */
   #txt {
     flex: 1;
     font-size: 22px;
@@ -229,10 +230,11 @@
   <h1>Dépenses</h1>
   <form id="f" autocomplete="off">
     <input id="txt" type="text" placeholder="40 picard" autofocus
+           aria-label="Saisie de dépense (montant puis libellé)"
            autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
     <button type="submit" aria-label="Envoyer">➤</button>
   </form>
-  <div id="pending" hidden></div>
+  <div id="pending" role="status" hidden></div>
   <section id="stats">
     <div class="tile">
       <div class="tileLabel">Aujourd’hui</div>
@@ -294,10 +296,13 @@ const statMonthSubEl = document.getElementById('statMonthSub');
 const catBarsEl = document.getElementById('catBars');
 const noTokenEl = document.getElementById('noToken');
 
-const history = []; // saisies de la session (les non-confirmées restent affichées)
+/* "session" et pas "history" : nommer ce tableau `history` masquerait
+   window.history et casserait history.replaceState() dans captureTokenFromHash. */
+const session = []; // saisies de la session (les non-confirmées restent affichées)
 let dayRecap = null; // dernier récap du jour renvoyé par le backend
 let toastTimer = null;
 let flushing = false;
+let recapSeq = 0; // ignore les réponses de récap arrivées dans le désordre
 
 const eur = new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' });
 
@@ -308,11 +313,32 @@ function todayStr() {
   }).format(new Date());
 }
 
-/* Couleur stable par catégorie (même teinte dans les barres et la liste). */
+/* Couleurs par catégorie : palette fixe validée pour fond sombre (cf. D27) —
+   le hash HSL produisait des teintes trop proches entre catégories.
+   `autre` en gris neutre (catch-all). Catégorie inconnue → slot par hash
+   dans la même palette (stable entre sessions et appareils). */
+const CAT_COLORS = {
+  nourriture: '#008300',
+  restaurant: '#d95926',
+  sorties: '#d55181',
+  transport: '#3987e5',
+  shopping: '#9085e9',
+  sante: '#e66767',
+  abonnements: '#199e70',
+  logement: '#c98500',
+  sport: '#1f9fc9',
+  cadeaux: '#8a9a00',
+  chat: '#b56d33',
+  autre: '#898781'
+};
+const CAT_FALLBACK = Object.values(CAT_COLORS).filter((c) => c !== '#898781');
 function catColor(name) {
+  // Même normalisation que le backend (D3) : minuscules + sans diacritiques.
+  const key = String(name).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (CAT_COLORS[key]) return CAT_COLORS[key];
   let h = 0;
-  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return `hsl(${h} 45% 55%)`;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CAT_FALLBACK[h % CAT_FALLBACK.length];
 }
 
 function toast(msg, kind) {
@@ -342,7 +368,7 @@ function showNoToken() {
 function renderHistory() {
   historyEl.innerHTML = '';
 
-  const unconfirmed = history.filter((h) => h.status !== 'ok').slice(-5).reverse();
+  const unconfirmed = session.filter((h) => h.status !== 'ok').slice(-5).reverse();
   for (const h of unconfirmed) {
     const li = document.createElement('li');
     li.className = h.status;
@@ -415,10 +441,11 @@ function renderHistory() {
 
 async function fetchRecap() {
   if (!TOKEN || !navigator.onLine) return;
+  const seq = ++recapSeq; // deux fetch peuvent se résoudre dans le désordre
   try {
     const res = await fetch(`${API_URL}?token=${encodeURIComponent(TOKEN)}&action=today`);
     const data = await res.json();
-    if (data.ok) {
+    if (data.ok && seq === recapSeq) {
       dayRecap = data;
       renderHistory();
     }
@@ -438,7 +465,7 @@ async function apiSend(item) {
 async function submitEntry(text) {
   const item = { text, date: todayStr() };
   const entry = { text, status: 'pending', info: '…' };
-  history.push(entry);
+  session.push(entry);
   renderHistory();
 
   if (!navigator.onLine) {
@@ -483,12 +510,15 @@ function queueItem(item, entry) {
 
 async function flushQueue() {
   if (flushing || !navigator.onLine) return;
-  const q = getQueue();
-  if (!q.length) return;
+  if (!getQueue().length) return;
   flushing = true;
   let synced = 0;
   try {
-    while (q.length) {
+    while (true) {
+      // Relit la file à chaque tour : une saisie peut s'y ajouter pendant
+      // l'await — travailler sur un snapshot l'écraserait au setQueue suivant.
+      const q = getQueue();
+      if (!q.length) break;
       const data = await apiSend(q[0]); // rejette si réseau KO → on garde l'item
       if (data.ok || (data.error && data.error !== 'unauthorized')) {
         // ok, ou erreur de parsing définitive : on retire de la file
@@ -528,9 +558,9 @@ async function undoLast() {
   if (q.length) {
     const it = q.pop();
     setQueue(q);
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i].status === 'queued' && history[i].text === it.text) {
-        history.splice(i, 1);
+    for (let i = session.length - 1; i >= 0; i--) {
+      if (session[i].status === 'queued' && session[i].text === it.text) {
+        session.splice(i, 1);
         break;
       }
     }
