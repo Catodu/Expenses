@@ -151,3 +151,10 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Cohérence avec [D15]** : le Sheet reste la seule source de vérité — le cache est un affichage d'attente, jamais une source de calcul, et il est réécrit intégralement à chaque réponse fraîche.
 **Bascule de jour** : un cache daté d'un autre jour du même mois affiche le jour à 0,00 € (liste vide) et garde le mois à titre indicatif ; un cache d'un autre mois est ignoré.
 **Écarté** : recalculer le récap côté client depuis un historique local (divergence avec le Sheet, cf. [D12]/[D15]) ; masquer complètement les données périmées (c'est précisément le symptôme qu'on corrige).
+
+## D30 — Détail par catégorie : clic sur une barre → dépenses du mois dépliées
+**Choix** : `?action=today` renvoie aussi, dans chaque entrée `by_category`, les dépenses du mois de la catégorie (`items` : date, montant, libellé — plus récent d'abord), collectées **dans la même passe de lecture** que les totaux (zéro lecture supplémentaire du Sheet). Côté PWA, chaque barre devient dépliable (chevron ▸/▾, clic ou Entrée/Espace, `role="button"` + `aria-expanded`) ; plusieurs catégories peuvent être ouvertes à la fois, l'état déplié survit aux rafraîchissements du récap.
+**Synergie [D29]** : le détail voyage dans le récap mis en cache → consultable hors-ligne. Poids : ~10-20 Ko pour un mois chargé, négligeable.
+**Dégradation** : tant que le backend déployé ne renvoie pas `items` (ou avec un vieux cache), les barres restent non cliquables, sans chevron — la PWA peut se déployer avant le backend.
+**Écarté** : action dédiée `?action=cat_items` à la demande (un aller-retour Apps Script par clic — jusqu'à ~7 s de cold start mesurées, inacceptable pour un simple dépli) ; accordéon à ouverture unique (comparer deux catégories est un usage naturel).
+**Rappel déploiement backend** : `clasp push -f` puis `clasp redeploy <deploymentId>` depuis `apps-script/` (cf. SETUP.md Maintenance), ou l'éditeur Apps Script (Déployer → Gérer les déploiements → Nouvelle version).

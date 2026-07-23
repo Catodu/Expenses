@@ -151,6 +151,47 @@
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
   }
+  .catRow .chev {
+    width: 12px;
+    flex-shrink: 0;
+    text-align: center;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .catRow.expandable { cursor: pointer; }
+  .catRow.expandable:active { opacity: 0.7; }
+
+  /* Détail d'une catégorie déplié : dépenses du mois */
+  .catDetail {
+    margin: 0 0 4px 22px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .catDetail .item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 2px;
+    border-bottom: 1px solid var(--border);
+  }
+  .catDetail .item:last-child { border-bottom: none; }
+  .catDetail .d {
+    width: 40px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .catDetail .l {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+  }
+  .catDetail .a {
+    flex-shrink: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
 
   /* Liste du jour + saisies en cours */
   #listTitle {
@@ -311,6 +352,7 @@ let flushing = false;
 let recapSeq = 0; // ignore les réponses de récap arrivées dans le désordre
 let recapAt = 0; // horodatage du récap affiché
 let recapFresh = false; // false = récap issu du cache local, pas encore confirmé
+const openCats = new Set(); // catégories dépliées (survit aux re-rendus du récap)
 
 /* Dernier récap conservé en localStorage : affiché immédiatement au chargement
    (estompé + "il y a X") en attendant la réponse réseau — l'app ne paraît
@@ -438,6 +480,8 @@ function renderHistory() {
     for (const c of cats) {
       const row = document.createElement('div');
       row.className = 'catRow';
+      const chev = document.createElement('span');
+      chev.className = 'chev';
       const name = document.createElement('span');
       name.className = 'name';
       name.textContent = c.categorie;
@@ -450,8 +494,51 @@ function renderHistory() {
       const amt = document.createElement('span');
       amt.className = 'amt';
       amt.textContent = eur.format(c.total);
-      row.append(name, bar, amt);
+      row.append(chev, name, bar, amt);
       catBarsEl.appendChild(row);
+
+      // Détail du mois : dispo seulement si le backend renvoie c.items
+      // (ancien backend ou vieux cache → ligne non cliquable, sans chevron).
+      if (Array.isArray(c.items) && c.items.length) {
+        const det = document.createElement('div');
+        det.className = 'catDetail';
+        for (const it of c.items) {
+          const line = document.createElement('div');
+          line.className = 'item';
+          const d = document.createElement('span');
+          d.className = 'd';
+          d.textContent = `${it.date.slice(8, 10)}/${it.date.slice(5, 7)}`;
+          const l = document.createElement('span');
+          l.className = 'l';
+          l.textContent = it.libelle;
+          const a = document.createElement('span');
+          a.className = 'a';
+          a.textContent = eur.format(it.montant);
+          line.append(d, l, a);
+          det.appendChild(line);
+        }
+        catBarsEl.appendChild(det);
+
+        const open = openCats.has(c.categorie);
+        det.hidden = !open;
+        chev.textContent = open ? '▾' : '▸';
+        row.classList.add('expandable');
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-expanded', String(open));
+        row.tabIndex = 0;
+        const toggle = () => {
+          const show = det.hidden;
+          det.hidden = !show;
+          chev.textContent = show ? '▾' : '▸';
+          row.setAttribute('aria-expanded', String(show));
+          if (show) openCats.add(c.categorie);
+          else openCats.delete(c.categorie);
+        };
+        row.addEventListener('click', toggle);
+        row.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+        });
+      }
     }
 
     const items = dayRecap.items.slice().reverse();

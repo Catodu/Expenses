@@ -106,7 +106,7 @@ function doGet(e) {
 }
 
 /** Dépenses du jour (date = aujourd'hui Europe/Brussels) : total + liste,
- *  plus le total du mois en cours. */
+ *  plus le total du mois en cours et le détail du mois par catégorie. */
 function todayRecap() {
   var sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_LOG);
   var today = todayStr();
@@ -115,6 +115,7 @@ function todayRecap() {
   var total = 0;
   var monthTotal = 0;
   var catTotals = {};
+  var catItems = {};
   var lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     // B..E : date | montant | libelle | categorie
@@ -129,6 +130,8 @@ function todayRecap() {
         monthTotal += amount;
         var cat = String(vals[i][3]) || 'autre';
         catTotals[cat] = (catTotals[cat] || 0) + amount;
+        if (!catItems[cat]) catItems[cat] = [];
+        catItems[cat].push({ date: d, montant: vals[i][1], libelle: String(vals[i][2]) });
       }
       if (d === today) {
         items.push({
@@ -142,7 +145,12 @@ function todayRecap() {
   }
   var byCategory = Object.keys(catTotals)
     .map(function (c) {
-      return { categorie: c, total: Math.round(catTotals[c] * 100) / 100 };
+      var its = catItems[c] || [];
+      // Plus récent d'abord (les lignes antidatées "hier" sortent du bon côté).
+      its.sort(function (a, b) {
+        return a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
+      });
+      return { categorie: c, total: Math.round(catTotals[c] * 100) / 100, items: its };
     })
     .sort(function (a, b) {
       return b.total - a.total;
