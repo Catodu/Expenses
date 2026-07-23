@@ -105,6 +105,11 @@
     margin-top: 2px;
     min-height: 15px;
   }
+  /* Récap affiché depuis le cache local, pas encore confirmé par le réseau */
+  main.stale .tileValue, main.stale #catBars, main.stale #history {
+    opacity: 0.55;
+    transition: opacity 0.2s;
+  }
 
   /* Barres par catégorie (mois) */
   #catBars {
@@ -295,6 +300,7 @@ const statMonthEl = document.getElementById('statMonth');
 const statMonthSubEl = document.getElementById('statMonthSub');
 const catBarsEl = document.getElementById('catBars');
 const noTokenEl = document.getElementById('noToken');
+const mainEl = document.querySelector('main');
 
 /* "session" et pas "history" : nommer ce tableau `history` masquerait
    window.history et casserait history.replaceState() dans captureTokenFromHash. */
@@ -303,6 +309,14 @@ let dayRecap = null; // dernier récap du jour renvoyé par le backend
 let toastTimer = null;
 let flushing = false;
 let recapSeq = 0; // ignore les réponses de récap arrivées dans le désordre
+let recapAt = 0; // horodatage du récap affiché
+let recapFresh = false; // false = récap issu du cache local, pas encore confirmé
+
+/* Dernier récap conservé en localStorage : affiché immédiatement au chargement
+   (estompé + "il y a X") en attendant la réponse réseau — l'app ne paraît
+   jamais vide. Le Sheet reste la source de vérité (D15) : c'est un affichage
+   d'attente, remplacé dès que fetchRecap répond. */
+const RKEY = 'expense_recap_v1';
 
 const eur = new Intl.NumberFormat('fr-BE', { style: 'currency', currency: 'EUR' });
 
@@ -363,10 +377,33 @@ function showNoToken() {
   form.hidden = true;
 }
 
+function agoLabel(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return 'à l’instant';
+  if (m < 60) return `il y a ${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `il y a ${h} h`;
+  return `il y a ${Math.round(h / 24)} j`;
+}
+
+function loadCachedRecap() {
+  let c;
+  try { c = JSON.parse(localStorage.getItem(RKEY)); } catch { return; }
+  if (!c || !c.recap || !c.day) return;
+  const today = todayStr();
+  if (c.day !== today && c.day.slice(0, 7) !== today.slice(0, 7)) return; // autre mois : inutile
+  // Autre jour du même mois : le jour repart de zéro, seul le mois reste indicatif.
+  dayRecap = c.day === today ? c.recap : { ...c.recap, total: 0, count: 0, items: [] };
+  recapAt = c.at || 0;
+  recapFresh = false;
+  renderHistory();
+}
+
 /* Rendu : tuiles de stats, barres par catégorie, puis liste = saisies de
    session non confirmées (pending/queued/error) + dépenses du jour. */
 function renderHistory() {
   historyEl.innerHTML = '';
+  mainEl.classList.toggle('stale', Boolean(dayRecap) && !recapFresh);
 
   const unconfirmed = session.filter((h) => h.status !== 'ok').slice(-5).reverse();
   for (const h of unconfirmed) {
@@ -387,8 +424,9 @@ function renderHistory() {
 
   if (dayRecap) {
     statDayEl.textContent = eur.format(dayRecap.total);
+    const ago = (recapFresh || !recapAt) ? '' : ` · ${agoLabel(recapAt)}`;
     statDaySubEl.textContent =
-      `${dayRecap.count} dépense${dayRecap.count > 1 ? 's' : ''}`;
+      `${dayRecap.count} dépense${dayRecap.count > 1 ? 's' : ''}${ago}`;
     statMonthEl.textContent = eur.format(dayRecap.month_total);
     const nCats = (dayRecap.by_category || []).length;
     statMonthSubEl.textContent =
@@ -442,14 +480,31 @@ function renderHistory() {
 async function fetchRecap() {
   if (!TOKEN || !navigator.onLine) return;
   const seq = ++recapSeq; // deux fetch peuvent se résoudre dans le désordre
+  // "…" = chargement en cours ; "—" reste réservé à "pas de données".
+  if (!dayRecap) { statDayEl.textContent = '…'; statMonthEl.textContent = '…'; }
   try {
     const res = await fetch(`${API_URL}?token=${encodeURIComponent(TOKEN)}&action=today`);
     const data = await res.json();
-    if (data.ok && seq === recapSeq) {
+    if (seq !== recapSeq) return;
+    if (data.ok) {
       dayRecap = data;
+      recapFresh = true;
+      recapAt = Date.now();
+      try {
+        localStorage.setItem(RKEY, JSON.stringify({ day: todayStr(), at: recapAt, recap: data }));
+      } catch { /* stockage plein : tant pis pour le cache */ }
       renderHistory();
+    } else if (!dayRecap) {
+      statDayEl.textContent = '—';
+      statMonthEl.textContent = '—';
     }
-  } catch { /* hors-ligne ou backend indisponible : on garde l'affichage courant */ }
+  } catch {
+    // Hors-ligne ou backend indisponible : on garde l'affichage courant.
+    if (!dayRecap && seq === recapSeq) {
+      statDayEl.textContent = '—';
+      statMonthEl.textContent = '—';
+    }
+  }
 }
 
 // POST "simple request" (pas de header custom → pas de preflight CORS,
@@ -611,6 +666,7 @@ setQueue(getQueue()); // affiche le compteur au chargement
 if (!TOKEN) {
   showNoToken();
 } else {
+  loadCachedRecap(); // affichage immédiat, remplacé dès que le réseau répond
   flushQueue();
   fetchRecap();
   txt.focus();

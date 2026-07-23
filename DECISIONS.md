@@ -144,3 +144,10 @@ Format : décision → raison → alternative écartée. (BMAD-lite : pas de cé
 **Constat** (capture d'écran de l'état sans token) : le formulaire restait **visible** en même temps que le message « Token manquant » — `form.hidden = true` dans `showNoToken()` était sans effet car la règle auteur `form { display: flex }` écrase le `display: none` que le navigateur applique à `[hidden]`.
 **Correctif** : règle `form[hidden] { display: none; }` — le même pattern existait déjà pour `#pending` et `#listTitle`, seul `form` avait été oublié.
 **Leçon** : tout élément qui reçoit un `display` explicite en CSS **et** est masqué via l'attribut `hidden` doit avoir sa règle `[hidden]` dédiée.
+
+## D29 — Cache local du dernier récap + états de chargement distincts
+**Constat** (vécu au déploiement de D27 : « j'ai l'impression de n'avoir aucune data ») : tant que `fetchRecap()` n'a pas répondu — hors-ligne, réseau lent, cold start Apps Script (~7 s mesurées) — l'app affichait « — » et zéro barre : indistinguable d'une app vide ou cassée.
+**Choix** : (a) le dernier récap confirmé est conservé en `localStorage` (`expense_recap_v1`, avec sa date et son horodatage) et affiché **immédiatement** au chargement, estompé (`main.stale`, opacité 0.55) avec la mention « il y a X » dans la tuile du jour ; remplacé dès que le réseau répond. (b) Pendant un premier chargement sans cache, les tuiles affichent « … » (chargement) ; « — » est réservé à « pas de données » (réponse arrivée, vide ou refusée).
+**Cohérence avec [D15]** : le Sheet reste la seule source de vérité — le cache est un affichage d'attente, jamais une source de calcul, et il est réécrit intégralement à chaque réponse fraîche.
+**Bascule de jour** : un cache daté d'un autre jour du même mois affiche le jour à 0,00 € (liste vide) et garde le mois à titre indicatif ; un cache d'un autre mois est ignoré.
+**Écarté** : recalculer le récap côté client depuis un historique local (divergence avec le Sheet, cf. [D12]/[D15]) ; masquer complètement les données périmées (c'est précisément le symptôme qu'on corrige).
